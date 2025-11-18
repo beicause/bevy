@@ -89,9 +89,10 @@ const VISIBILITY_RANGE_UNIFORM_BUFFER_SIZE: u32 = 64u;
 @group(0) @binding(25) var view_transmission_sampler: sampler;
 
 #ifdef OIT_ENABLED
-@group(0) @binding(26) var<storage, read_write> oit_layers: array<vec2<u32>>;
-@group(0) @binding(27) var<storage, read_write> oit_layer_ids: array<atomic<i32>>;
-@group(0) @binding(28) var<uniform> oit_settings: types::OrderIndependentTransparencySettings;
+@group(0) @binding(26) var<uniform> oit_settings: types::OrderIndependentTransparencySettings;
+@group(0) @binding(27) var<storage, read_write> oit_nodes: array<types::OitFragmentNode>;
+@group(0) @binding(28) var<storage, read_write> oit_headers: array<atomic<u32>>;
+@group(0) @binding(29) var<storage, read_write> oit_atomic_counter: atomic<u32>;
 #endif // OIT_ENABLED
 
 #ifdef MULTIPLE_LIGHT_PROBES_IN_ARRAY

@@ -372,14 +372,18 @@ fn layout_entries(
         // platform, so we don't need to do it here.
         if is_oit_supported(render_adapter, render_device, false) {
             entries = entries.extend_with_indices((
-                // oit_layers
-                (26, storage_buffer_sized(false, None)),
-                // oit_layer_ids,
-                (27, storage_buffer_sized(false, None)),
-                // oit_layer_count
                 (
-                    28,
+                    26,
                     uniform_buffer::<OrderIndependentTransparencySettings>(true),
+                ),
+                // oit_nodes
+                (27, storage_buffer_sized(false, None)),
+                // oit_headers,
+                (28, storage_buffer_sized(false, None)),
+                // oit_atomic_counter
+                (
+                    29,
+                    storage_buffer_sized(false, NonZero::<u64>::new(size_of::<u32>() as u64)),
                 ),
             ));
         }
@@ -685,19 +689,22 @@ pub fn prepare_mesh_view_bind_groups(
 
             if has_oit
                 && let (
-                    Some(oit_layers_binding),
-                    Some(oit_layer_ids_binding),
                     Some(oit_settings_binding),
+                    Some(oit_nodes),
+                    Some(oit_headers),
+                    Some(oit_atomic_counter),
                 ) = (
-                    oit_buffers.layers.binding(),
-                    oit_buffers.layer_ids.binding(),
                     oit_buffers.settings.binding(),
+                    oit_buffers.nodes.binding(),
+                    oit_buffers.headers.binding(),
+                    oit_buffers.atomic_counter.binding(),
                 )
             {
                 entries = entries.extend_with_indices((
-                    (26, oit_layers_binding.clone()),
-                    (27, oit_layer_ids_binding.clone()),
-                    (28, oit_settings_binding.clone()),
+                    (26, oit_settings_binding.clone()),
+                    (27, oit_nodes.clone()),
+                    (28, oit_headers.clone()),
+                    (29, oit_atomic_counter.clone()),
                 ));
             }
 
