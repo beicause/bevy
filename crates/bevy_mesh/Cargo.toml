@@ -13,7 +13,9 @@ keywords = ["bevy"]
 bevy_app = { path = "../bevy_app", version = "0.17.3" }
 bevy_asset = { path = "../bevy_asset", version = "0.17.3" }
 bevy_image = { path = "../bevy_image", version = "0.17.3" }
-bevy_math = { path = "../bevy_math", version = "0.17.3" }
+bevy_math = { path = "../bevy_math", version = "0.17.3", features = [
+  "glam_bytemuck",
+] }
 bevy_reflect = { path = "../bevy_reflect", version = "0.17.3" }
 bevy_ecs = { path = "../bevy_ecs", version = "0.17.3" }
 bevy_transform = { path = "../bevy_transform", version = "0.17.3" }
