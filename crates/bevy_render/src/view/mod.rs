@@ -140,7 +140,7 @@ impl Plugin for ViewPlugin {
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app
                 .init_resource::<ViewUniforms>()
-                .init_resource::<ViewTargetAttachments>();
+                .init_resource::<ViewOutputTargetAttachments>();
         }
     }
 }
@@ -616,7 +616,7 @@ pub struct ViewUniformOffset {
 
 #[derive(Component, Clone)]
 pub struct ViewTarget {
-    main_textures: Arc<MainTargetTextures>,
+    main_textures: MainTargetTextures,
     main_texture_format: TextureFormat,
     /// 0 represents `main_textures.a`, 1 represents `main_textures.b`
     /// This is shared across view targets with the same render target
@@ -629,7 +629,10 @@ pub struct ViewTarget {
 /// the default output color attachment for a specific target can do so by adding a
 /// [`OutputColorAttachment`] to this resource before [`prepare_view_targets`] is called.
 #[derive(Resource, Default, Deref, DerefMut)]
-pub struct ViewTargetAttachments(HashMap<NormalizedRenderTarget, OutputColorAttachment>);
+pub struct ViewOutputTargetAttachments(HashMap<NormalizedRenderTarget, OutputColorAttachment>);
+
+#[derive(Resource, Default, Deref, DerefMut)]
+pub struct ViewColorTargetAttachments(HashMap<NormalizedRenderTarget, ColorAttachment>);
 
 pub struct PostProcessWrite<'a> {
     pub source: &'a TextureView,
@@ -800,7 +803,7 @@ impl ViewTarget {
     pub fn sampled_main_texture(&self) -> Option<&Texture> {
         self.main_textures
             .a
-            .resolve_target
+            .multisampled
             .as_ref()
             .map(|sampled| &sampled.texture)
     }
@@ -809,7 +812,7 @@ impl ViewTarget {
     pub fn sampled_main_texture_view(&self) -> Option<&TextureView> {
         self.main_textures
             .a
-            .resolve_target
+            .multisampled
             .as_ref()
             .map(|sampled| &sampled.default_view)
     }
@@ -991,77 +994,10 @@ pub fn prepare_view_uniforms(
     }
 }
 
+#[derive(Clone)]
 struct MainTargetTextures {
     a: ColorAttachment,
     b: Option<ColorAttachment>,
-}
-
-#[derive(Component)]
-pub struct CameraMainTextureStorage(Arc<MainTargetTextures>);
-
-impl MainTargetTextures {
-    fn new(
-        texture_cache: &mut TextureCache,
-        render_device: &RenderDevice,
-        texture_usage: TextureUsages,
-        main_texture_format: TextureFormat,
-        main_texture_size: UVec2,
-        msaa: Msaa,
-        converted_clear_color: Option<LinearRgba>,
-    ) -> Self {
-        let descriptor = TextureDescriptor {
-            label: None,
-            size: main_texture_size.to_extents(),
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: main_texture_format,
-            usage: texture_usage,
-            view_formats: match main_texture_format {
-                TextureFormat::Bgra8Unorm => &[TextureFormat::Bgra8UnormSrgb],
-                TextureFormat::Rgba8Unorm => &[TextureFormat::Rgba8UnormSrgb],
-                _ => &[],
-            },
-        };
-        let a = texture_cache.get(
-            render_device,
-            TextureDescriptor {
-                label: Some("main_texture_a"),
-                ..descriptor
-            },
-        );
-        let b = texture_cache.get(
-            render_device,
-            TextureDescriptor {
-                label: Some("main_texture_b"),
-                ..descriptor
-            },
-        );
-        let sampled = if msaa.samples() > 1 {
-            let sampled = texture_cache.get(
-                render_device,
-                TextureDescriptor {
-                    label: Some("main_texture_sampled"),
-                    size: main_texture_size.to_extents(),
-                    mip_level_count: 1,
-                    sample_count: msaa.samples(),
-                    dimension: TextureDimension::D2,
-                    format: main_texture_format,
-                    usage: TextureUsages::RENDER_ATTACHMENT,
-                    view_formats: descriptor.view_formats,
-                },
-            );
-            Some(sampled)
-        } else {
-            None
-        };
-        let main_texture = Arc::new(AtomicUsize::new(0));
-        Self {
-            a: ColorAttachment::new(a.clone(), sampled.clone(), None, converted_clear_color),
-            b: ColorAttachment::new(b.clone(), sampled.clone(), None, converted_clear_color),
-            main_texture: main_texture.clone(),
-        }
-    }
 }
 
 /// Prepares the view target [`OutputColorAttachment`] for each view in the current frame.
@@ -1070,10 +1006,10 @@ pub fn prepare_view_attachments(
     images: Res<RenderAssets<GpuImage>>,
     manual_texture_views: Res<ManualTextureViews>,
     cameras: Query<&ExtractedCamera>,
-    mut view_target_attachments: ResMut<ViewTargetAttachments>,
+    mut view_target_attachments: ResMut<ViewOutputTargetAttachments>,
 ) {
     for camera in cameras.iter() {
-        let Some(target) = &camera.target else {
+        let Some(target) = &camera.output_color_target else {
             continue;
         };
 
@@ -1095,7 +1031,7 @@ pub fn prepare_view_attachments(
 }
 
 /// Clears the view target [`OutputColorAttachment`]s.
-pub fn clear_view_attachments(mut view_target_attachments: ResMut<ViewTargetAttachments>) {
+pub fn clear_view_attachments(mut view_target_attachments: ResMut<ViewOutputTargetAttachments>) {
     view_target_attachments.clear();
 }
 
@@ -1105,7 +1041,7 @@ pub fn cleanup_view_targets_for_resize(
     cameras: Query<(Entity, &ExtractedCamera), With<ViewTarget>>,
 ) {
     for (entity, camera) in &cameras {
-        if let Some(NormalizedRenderTarget::Window(window_ref)) = &camera.target
+        if let Some(NormalizedRenderTarget::Window(window_ref)) = &camera.output_color_target
             && let Some(window) = windows.get(&window_ref.entity())
             && (window.size_changed || window.present_mode_changed)
         {
@@ -1120,13 +1056,13 @@ pub fn prepare_view_targets(
     render_device: Res<RenderDevice>,
     mut texture_cache: ResMut<TextureCache>,
     cameras: Query<(Entity, &ExtractedCamera, &ExtractedView)>,
-    view_target_attachments: Res<ViewTargetAttachments>,
+    view_target_attachments: Res<ViewOutputTargetAttachments>,
 ) {
     for (entity, camera, view) in cameras.iter() {
         let (Some(viewport_size), Some(out_attachment)) = (
             camera.physical_viewport_size,
             camera
-                .target
+                .output_color_target
                 .as_ref()
                 .and_then(|target| view_target_attachments.get(target)),
         ) else {
@@ -1138,20 +1074,6 @@ pub fn prepare_view_targets(
             continue;
         };
 
-        let main_texture_entity = main_texture_of.entity;
-        let Ok((texture_usage, main_texture_size, msaa, textures_storage)) =
-            main_textures.get(*main_texture_entity)
-        else {
-            continue;
-        };
-
-        let main_texture_format = if view.hdr {
-            ViewTarget::TEXTURE_FORMAT_HDR
-        } else {
-            TextureFormat::bevy_default()
-        };
-
-        let main_texture_size = main_texture_size.apply_size(viewport_size);
         let clear_color = match camera.clear_color {
             ClearColorConfig::Custom(color) => Some(color),
             ClearColorConfig::None => None,
@@ -1159,24 +1081,6 @@ pub fn prepare_view_targets(
         };
 
         let converted_clear_color = clear_color.map(Into::into);
-
-        let main_textures = if let Some(storage) = textures_storage {
-            storage.0.clone()
-        } else {
-            let main_textures = Arc::new(MainTargetTextures::new(
-                &mut texture_cache,
-                &render_device,
-                texture_usage.0,
-                main_texture_format,
-                main_texture_size,
-                *msaa,
-                converted_clear_color,
-            ));
-            commands
-                .entity(*main_texture_entity)
-                .insert(CameraMainTextureStorage(main_textures.clone()));
-            main_textures
-        };
 
         commands.entity(entity).insert(ViewTarget {
             main_texture: main_textures.main_texture.clone(),

@@ -9,22 +9,18 @@ pub struct RenderTargetDoubleBuffered {
 #[derive(Component)]
 pub struct NoAutoConfiguredColorTarget;
 
-/// `RenderTarget` or `RenderTargetDoubleBuffered`.
 #[derive(Component)]
 #[relationship(relationship_target  = ColorTarget)]
 pub struct ColorTargetOf(pub Entity);
 
-/// `RenderTarget` or `RenderTargetDoubleBuffered`.
 #[derive(Component)]
 #[relationship(relationship_target  = MsaaColorTarget)]
 pub struct MsaaColorTargetOf(pub Entity);
 
-/// `RenderTarget` or `RenderTargetDoubleBuffered`.
 #[derive(Component)]
 #[relationship(relationship_target  = MsaaResolveTarget)]
 pub struct MsaaResolveTargetOf(pub Entity);
 
-/// `RenderTarget` or `RenderTargetDoubleBuffered`.
 #[derive(Component)]
 #[relationship(relationship_target  = OutputColorTarget)]
 pub struct OutputColorTargetOf(pub Entity);

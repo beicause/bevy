@@ -821,7 +821,7 @@ pub fn prepare_core_3d_depth_textures(
             usage |= TextureUsages::COPY_SRC;
         }
         render_target_usage
-            .entry(camera.target.clone())
+            .entry(camera.output_color_target.clone())
             .and_modify(|u| *u |= usage)
             .or_insert_with(|| usage);
     }
@@ -832,11 +832,16 @@ pub fn prepare_core_3d_depth_textures(
             continue;
         };
         let usage = *render_target_usage
-            .get(&camera.target.clone())
+            .get(&camera.output_color_target.clone())
             .expect("The depth texture usage should already exist for this target");
 
         let cached_texture = textures
-            .entry((camera.target.clone(), physical_viewport_size, usage, msaa))
+            .entry((
+                camera.output_color_target.clone(),
+                physical_viewport_size,
+                usage,
+                msaa,
+            ))
             .or_insert_with(|| {
                 let descriptor = TextureDescriptor {
                     label: Some("view_depth_texture"),
@@ -910,7 +915,7 @@ pub fn prepare_core_3d_transmission_textures(
         }
 
         let cached_texture = textures
-            .entry(camera.target.clone())
+            .entry(camera.output_color_target.clone())
             .or_insert_with(|| {
                 let usage = TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST;
 
@@ -1045,7 +1050,7 @@ pub fn prepare_prepass_textures(
 
         let cached_depth_texture1 = depth_prepass.then(|| {
             depth_textures1
-                .entry(camera.target.clone())
+                .entry(camera.output_color_target.clone())
                 .or_insert_with(|| {
                     let descriptor = TextureDescriptor {
                         label: Some("prepass_depth_texture_1"),
@@ -1066,7 +1071,7 @@ pub fn prepare_prepass_textures(
 
         let cached_depth_texture2 = depth_prepass_double_buffer.then(|| {
             depth_textures2
-                .entry(camera.target.clone())
+                .entry(camera.output_color_target.clone())
                 .or_insert_with(|| {
                     let descriptor = TextureDescriptor {
                         label: Some("prepass_depth_texture_2"),
@@ -1087,7 +1092,7 @@ pub fn prepare_prepass_textures(
 
         let cached_normals_texture = normal_prepass.then(|| {
             normal_textures
-                .entry(camera.target.clone())
+                .entry(camera.output_color_target.clone())
                 .or_insert_with(|| {
                     texture_cache.get(
                         &render_device,
@@ -1109,7 +1114,7 @@ pub fn prepare_prepass_textures(
 
         let cached_motion_vectors_texture = motion_vector_prepass.then(|| {
             motion_vectors_textures
-                .entry(camera.target.clone())
+                .entry(camera.output_color_target.clone())
                 .or_insert_with(|| {
                     texture_cache.get(
                         &render_device,
@@ -1131,7 +1136,7 @@ pub fn prepare_prepass_textures(
 
         let cached_deferred_texture1 = deferred_prepass.then(|| {
             deferred_textures1
-                .entry(camera.target.clone())
+                .entry(camera.output_color_target.clone())
                 .or_insert_with(|| {
                     texture_cache.get(
                         &render_device,
@@ -1153,7 +1158,7 @@ pub fn prepare_prepass_textures(
 
         let cached_deferred_texture2 = deferred_prepass_double_buffer.then(|| {
             deferred_textures2
-                .entry(camera.target.clone())
+                .entry(camera.output_color_target.clone())
                 .or_insert_with(|| {
                     texture_cache.get(
                         &render_device,
@@ -1175,7 +1180,7 @@ pub fn prepare_prepass_textures(
 
         let cached_deferred_lighting_pass_id_texture = deferred_prepass.then(|| {
             deferred_lighting_id_textures
-                .entry(camera.target.clone())
+                .entry(camera.output_color_target.clone())
                 .or_insert_with(|| {
                     texture_cache.get(
                         &render_device,

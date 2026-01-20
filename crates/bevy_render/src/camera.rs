@@ -594,7 +594,10 @@ pub fn camera_system(
 
 #[derive(Component, Debug)]
 pub struct ExtractedCamera {
-    pub target: Option<NormalizedRenderTarget>,
+    pub output_color_target: Option<NormalizedRenderTarget>,
+    pub main_color_target_a: Option<NormalizedRenderTarget>,
+    pub main_color_target_b: Option<NormalizedRenderTarget>,
+    pub multisampled_color_target: Option<NormalizedRenderTarget>,
     pub physical_viewport_size: Option<UVec2>,
     pub viewport: Option<Viewport>,
     pub render_graph: InternedRenderSubGraph,
@@ -624,7 +627,12 @@ pub fn extract_cameras(
                 Option<&Projection>,
                 Has<NoIndirectDrawing>,
             ),
-            Option<&OutputColorTargetOf>,
+            (
+                Option<&ColorTargetOf>,
+                Option<&MsaaColorTargetOf>,
+                Option<&MsaaResolveTargetOf>,
+                Option<&OutputColorTargetOf>,
+            ),
         )>,
     >,
     render_targets: Extract<Query<&RenderTarget>>,
@@ -661,7 +669,7 @@ pub fn extract_cameras(
             projection,
             no_indirect_drawing,
         ),
-        out_tex,
+        (color_target, msaa_target, msaa_resolve_target, output_target),
     ) in query.iter()
     {
         if !camera.is_active {
@@ -705,7 +713,7 @@ pub fn extract_cameras(
                     .collect(),
             };
 
-            let output_target = if let Some(output_target_of) = out_tex {
+            let output_target = if let Some(output_target_of) = output_target {
                 render_targets
                     .get(output_target_of.0)
                     .unwrap()
@@ -718,7 +726,7 @@ pub fn extract_cameras(
 
             commands.insert((
                 ExtractedCamera {
-                    target: output_target,
+                    output_color_target: output_target,
                     physical_viewport_size: Some(viewport_size),
                     viewport: camera.viewport.clone(),
                     render_graph: camera_render_graph.0,
