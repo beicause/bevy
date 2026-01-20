@@ -2,15 +2,16 @@ pub mod visibility;
 pub mod window;
 
 use bevy_camera::{
-    primitives::Frustum, CameraMainTextureUsages, ClearColor, ClearColorConfig, Exposure,
-    MainPassResolutionOverride, NormalizedRenderTarget,
+    primitives::Frustum, ClearColor, ClearColorConfig, Exposure, MainPassResolutionOverride,
+    NormalizedRenderTarget,
 };
 use bevy_diagnostic::FrameCount;
+use bevy_math::UVec2;
 pub use visibility::*;
 pub use window::*;
 
 use crate::{
-    camera::{ExtractedCamera, MipBias, NormalizedRenderTargetExt as _, TemporalJitter},
+    camera::{ExtractedCamera, MipBias, NormalizedRenderTargetExt, TemporalJitter},
     experimental::occlusion_culling::OcclusionCulling,
     extract_component::ExtractComponentPlugin,
     render_asset::RenderAssets,
@@ -128,7 +129,7 @@ impl Plugin for ViewPlugin {
                         .in_set(RenderSystems::ManageViews)
                         .after(prepare_windows)
                         .after(crate::render_asset::prepare_assets::<GpuImage>)
-                        .ambiguous_with(crate::camera::sort_cameras), // doesn't use `sorted_camera_index_for_target`
+                        .ambiguous_with(crate::camera::sort_cameras),
                     prepare_view_uniforms.in_set(RenderSystems::PrepareResources),
                 ),
             );
@@ -301,7 +302,6 @@ pub struct ExtractedView {
     // `projection` and `transform` fields, which can be helpful in cases where numerical
     // stability matters and there is a more direct way to derive the view-projection matrix.
     pub clip_from_world: Option<Mat4>,
-    pub hdr: bool,
     // uvec4(origin.x, origin.y, width, height)
     pub viewport: UVec4,
     pub color_grading: ColorGrading,
@@ -616,7 +616,7 @@ pub struct ViewUniformOffset {
 
 #[derive(Component, Clone)]
 pub struct ViewTarget {
-    main_textures: MainTargetTextures,
+    main_textures: Arc<MainTargetTextures>,
     main_texture_format: TextureFormat,
     /// 0 represents `main_textures.a`, 1 represents `main_textures.b`
     /// This is shared across view targets with the same render target
@@ -735,44 +735,34 @@ impl From<ColorGrading> for ColorGradingUniform {
 pub struct NoIndirectDrawing;
 
 impl ViewTarget {
-    pub const TEXTURE_FORMAT_HDR: TextureFormat = TextureFormat::Rgba16Float;
-
     /// Retrieve this target's main texture's color attachment.
     pub fn get_color_attachment(&self) -> RenderPassColorAttachment<'_> {
-        if self.main_texture.load(Ordering::SeqCst) == 0 {
-            self.main_textures.a.get_attachment()
+        if let Some(b) = &self.main_textures.b
+            && self.main_texture.load(Ordering::SeqCst) == 1
+        {
+            b.get_attachment()
         } else {
-            self.main_textures.b.get_attachment()
+            self.main_textures.a.get_attachment()
         }
     }
 
     /// Retrieve this target's "unsampled" main texture's color attachment.
     pub fn get_unsampled_color_attachment(&self) -> RenderPassColorAttachment<'_> {
-        if self.main_texture.load(Ordering::SeqCst) == 0 {
-            self.main_textures.a.get_unsampled_attachment()
+        if let Some(b) = &self.main_textures.b
+            && self.main_texture.load(Ordering::SeqCst) == 1
+        {
+            b.get_unsampled_attachment()
         } else {
-            self.main_textures.b.get_unsampled_attachment()
+            self.main_textures.a.get_unsampled_attachment()
         }
     }
 
     /// The "main" unsampled texture.
     pub fn main_texture(&self) -> &Texture {
-        if self.main_texture.load(Ordering::SeqCst) == 0 {
-            &self.main_textures.a.texture.texture
-        } else {
-            &self.main_textures.b.texture.texture
-        }
-    }
-
-    /// The _other_ "main" unsampled texture.
-    /// In most cases you should use [`Self::main_texture`] instead and never this.
-    /// The textures will naturally be swapped when [`Self::post_process_write`] is called.
-    ///
-    /// A use case for this is to be able to prepare a bind group for all main textures
-    /// ahead of time.
-    pub fn main_texture_other(&self) -> &Texture {
-        if self.main_texture.load(Ordering::SeqCst) == 0 {
-            &self.main_textures.b.texture.texture
+        if let Some(b) = &self.main_textures.b
+            && self.main_texture.load(Ordering::SeqCst) == 1
+        {
+            &b.texture.texture
         } else {
             &self.main_textures.a.texture.texture
         }
@@ -780,10 +770,12 @@ impl ViewTarget {
 
     /// The "main" unsampled texture.
     pub fn main_texture_view(&self) -> &TextureView {
-        if self.main_texture.load(Ordering::SeqCst) == 0 {
-            &self.main_textures.a.texture.default_view
+        if let Some(b) = &self.main_textures.b
+            && self.main_texture.load(Ordering::SeqCst) == 1
+        {
+            &b.texture.default_view
         } else {
-            &self.main_textures.b.texture.default_view
+            &self.main_textures.a.texture.default_view
         }
     }
 
@@ -794,8 +786,11 @@ impl ViewTarget {
     /// A use case for this is to be able to prepare a bind group for all main textures
     /// ahead of time.
     pub fn main_texture_other_view(&self) -> &TextureView {
+        let Some(b) = &self.main_textures.b else {
+            panic!("Main texture is not double buffered")
+        };
         if self.main_texture.load(Ordering::SeqCst) == 0 {
-            &self.main_textures.b.texture.default_view
+            &b.texture.default_view
         } else {
             &self.main_textures.a.texture.default_view
         }
@@ -822,12 +817,6 @@ impl ViewTarget {
     #[inline]
     pub fn main_texture_format(&self) -> TextureFormat {
         self.main_texture_format
-    }
-
-    /// Returns `true` if and only if the main texture is [`Self::TEXTURE_FORMAT_HDR`]
-    #[inline]
-    pub fn is_hdr(&self) -> bool {
-        self.main_texture_format == ViewTarget::TEXTURE_FORMAT_HDR
     }
 
     /// The final texture this view will render to.
@@ -862,21 +851,24 @@ impl ViewTarget {
     /// _must_ ensure `source` is copied to `destination`, with or without modifications.
     /// Failing to do so will cause the current main texture information to be lost.
     pub fn post_process_write(&self) -> PostProcessWrite<'_> {
+        let Some(main_texture_b) = &self.main_textures.b else {
+            panic!("Main texture is not double buffered")
+        };
         let old_is_a_main_texture = self.main_texture.fetch_xor(1, Ordering::SeqCst);
         // if the old main texture is a, then the post processing must write from a to b
         if old_is_a_main_texture == 0 {
-            self.main_textures.b.mark_as_cleared();
+            main_texture_b.mark_as_cleared();
             PostProcessWrite {
                 source: &self.main_textures.a.texture.default_view,
                 source_texture: &self.main_textures.a.texture.texture,
-                destination: &self.main_textures.b.texture.default_view,
-                destination_texture: &self.main_textures.b.texture.texture,
+                destination: &main_texture_b.texture.default_view,
+                destination_texture: &main_texture_b.texture.texture,
             }
         } else {
             self.main_textures.a.mark_as_cleared();
             PostProcessWrite {
-                source: &self.main_textures.b.texture.default_view,
-                source_texture: &self.main_textures.b.texture.texture,
+                source: &main_texture_b.texture.default_view,
+                source_texture: &main_texture_b.texture.texture,
                 destination: &self.main_textures.a.texture.default_view,
                 destination_texture: &self.main_textures.a.texture.texture,
             }
@@ -999,13 +991,77 @@ pub fn prepare_view_uniforms(
     }
 }
 
-#[derive(Clone)]
 struct MainTargetTextures {
     a: ColorAttachment,
-    b: ColorAttachment,
-    /// 0 represents `main_textures.a`, 1 represents `main_textures.b`
-    /// This is shared across view targets with the same render target
-    main_texture: Arc<AtomicUsize>,
+    b: Option<ColorAttachment>,
+}
+
+#[derive(Component)]
+pub struct CameraMainTextureStorage(Arc<MainTargetTextures>);
+
+impl MainTargetTextures {
+    fn new(
+        texture_cache: &mut TextureCache,
+        render_device: &RenderDevice,
+        texture_usage: TextureUsages,
+        main_texture_format: TextureFormat,
+        main_texture_size: UVec2,
+        msaa: Msaa,
+        converted_clear_color: Option<LinearRgba>,
+    ) -> Self {
+        let descriptor = TextureDescriptor {
+            label: None,
+            size: main_texture_size.to_extents(),
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: main_texture_format,
+            usage: texture_usage,
+            view_formats: match main_texture_format {
+                TextureFormat::Bgra8Unorm => &[TextureFormat::Bgra8UnormSrgb],
+                TextureFormat::Rgba8Unorm => &[TextureFormat::Rgba8UnormSrgb],
+                _ => &[],
+            },
+        };
+        let a = texture_cache.get(
+            render_device,
+            TextureDescriptor {
+                label: Some("main_texture_a"),
+                ..descriptor
+            },
+        );
+        let b = texture_cache.get(
+            render_device,
+            TextureDescriptor {
+                label: Some("main_texture_b"),
+                ..descriptor
+            },
+        );
+        let sampled = if msaa.samples() > 1 {
+            let sampled = texture_cache.get(
+                render_device,
+                TextureDescriptor {
+                    label: Some("main_texture_sampled"),
+                    size: main_texture_size.to_extents(),
+                    mip_level_count: 1,
+                    sample_count: msaa.samples(),
+                    dimension: TextureDimension::D2,
+                    format: main_texture_format,
+                    usage: TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: descriptor.view_formats,
+                },
+            );
+            Some(sampled)
+        } else {
+            None
+        };
+        let main_texture = Arc::new(AtomicUsize::new(0));
+        Self {
+            a: ColorAttachment::new(a.clone(), sampled.clone(), None, converted_clear_color),
+            b: ColorAttachment::new(b.clone(), sampled.clone(), None, converted_clear_color),
+            main_texture: main_texture.clone(),
+        }
+    }
 }
 
 /// Prepares the view target [`OutputColorAttachment`] for each view in the current frame.
@@ -1063,19 +1119,12 @@ pub fn prepare_view_targets(
     clear_color_global: Res<ClearColor>,
     render_device: Res<RenderDevice>,
     mut texture_cache: ResMut<TextureCache>,
-    cameras: Query<(
-        Entity,
-        &ExtractedCamera,
-        &ExtractedView,
-        &CameraMainTextureUsages,
-        &Msaa,
-    )>,
+    cameras: Query<(Entity, &ExtractedCamera, &ExtractedView)>,
     view_target_attachments: Res<ViewTargetAttachments>,
 ) {
-    let mut textures = <HashMap<_, _>>::default();
-    for (entity, camera, view, texture_usage, msaa) in cameras.iter() {
-        let (Some(target_size), Some(out_attachment)) = (
-            camera.physical_target_size,
+    for (entity, camera, view) in cameras.iter() {
+        let (Some(viewport_size), Some(out_attachment)) = (
+            camera.physical_viewport_size,
             camera
                 .target
                 .as_ref()
@@ -1089,77 +1138,44 @@ pub fn prepare_view_targets(
             continue;
         };
 
+        let main_texture_entity = main_texture_of.entity;
+        let Ok((texture_usage, main_texture_size, msaa, textures_storage)) =
+            main_textures.get(*main_texture_entity)
+        else {
+            continue;
+        };
+
         let main_texture_format = if view.hdr {
             ViewTarget::TEXTURE_FORMAT_HDR
         } else {
             TextureFormat::bevy_default()
         };
 
+        let main_texture_size = main_texture_size.apply_size(viewport_size);
         let clear_color = match camera.clear_color {
             ClearColorConfig::Custom(color) => Some(color),
             ClearColorConfig::None => None,
             _ => Some(clear_color_global.0),
         };
 
-        let (a, b, sampled, main_texture) = textures
-            .entry((camera.target.clone(), texture_usage.0, view.hdr, msaa))
-            .or_insert_with(|| {
-                let descriptor = TextureDescriptor {
-                    label: None,
-                    size: target_size.to_extents(),
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: TextureDimension::D2,
-                    format: main_texture_format,
-                    usage: texture_usage.0,
-                    view_formats: match main_texture_format {
-                        TextureFormat::Bgra8Unorm => &[TextureFormat::Bgra8UnormSrgb],
-                        TextureFormat::Rgba8Unorm => &[TextureFormat::Rgba8UnormSrgb],
-                        _ => &[],
-                    },
-                };
-                let a = texture_cache.get(
-                    &render_device,
-                    TextureDescriptor {
-                        label: Some("main_texture_a"),
-                        ..descriptor
-                    },
-                );
-                let b = texture_cache.get(
-                    &render_device,
-                    TextureDescriptor {
-                        label: Some("main_texture_b"),
-                        ..descriptor
-                    },
-                );
-                let sampled = if msaa.samples() > 1 {
-                    let sampled = texture_cache.get(
-                        &render_device,
-                        TextureDescriptor {
-                            label: Some("main_texture_sampled"),
-                            size: target_size.to_extents(),
-                            mip_level_count: 1,
-                            sample_count: msaa.samples(),
-                            dimension: TextureDimension::D2,
-                            format: main_texture_format,
-                            usage: TextureUsages::RENDER_ATTACHMENT,
-                            view_formats: descriptor.view_formats,
-                        },
-                    );
-                    Some(sampled)
-                } else {
-                    None
-                };
-                let main_texture = Arc::new(AtomicUsize::new(0));
-                (a, b, sampled, main_texture)
-            });
-
         let converted_clear_color = clear_color.map(Into::into);
 
-        let main_textures = MainTargetTextures {
-            a: ColorAttachment::new(a.clone(), sampled.clone(), None, converted_clear_color),
-            b: ColorAttachment::new(b.clone(), sampled.clone(), None, converted_clear_color),
-            main_texture: main_texture.clone(),
+        let main_textures = if let Some(storage) = textures_storage {
+            storage.0.clone()
+        } else {
+            let main_textures = Arc::new(MainTargetTextures::new(
+                &mut texture_cache,
+                &render_device,
+                texture_usage.0,
+                main_texture_format,
+                main_texture_size,
+                *msaa,
+                converted_clear_color,
+            ));
+            commands
+                .entity(*main_texture_entity)
+                .insert(CameraMainTextureStorage(main_textures.clone()));
+            main_textures
         };
 
         commands.entity(entity).insert(ViewTarget {
