@@ -15,12 +15,11 @@ use crate::{
 };
 
 use bevy_app::{App, Plugin, PostStartup, PostUpdate};
-use bevy_asset::{AssetEvent, AssetEventSystems, AssetId, AssetServer, Assets, RenderAssetUsages};
+use bevy_asset::{AssetEvent, AssetEventSystems, AssetId, Assets};
 use bevy_camera::{
     color_target::{
-        ColorTargetOf, MsaaColorTargetOf, MsaaResolveTargetOf, NoAutoConfiguredColorTarget,
-        NormalizedRenderTargetDoubleBuffered, OutputColorTarget, OutputColorTargetOf,
-        RenderTargetDoubleBuffered,
+        ColorTargetOf, NoAutoConfiguredColorTarget, NormalizedRenderColorTarget, OutputColorTarget,
+        OutputColorTargetOf, RenderColorTarget,
     },
     primitives::Frustum,
     visibility::{self, RenderLayers, VisibleEntities},
@@ -71,12 +70,16 @@ impl Plugin for CameraPlugin {
             .add_systems(
                 PostStartup,
                 (
-                    camera_system,
-                    auto_configure_camera_color_target,
-                    sync_camera_color_target_config,
-                )
-                    .chain()
-                    .in_set(CameraUpdateSystems),
+                    (
+                        camera_system,
+                        auto_configure_camera_color_target,
+                        sync_camera_color_target_config,
+                    )
+                        .chain()
+                        .in_set(CameraUpdateSystems),
+                    camera_with_render_target_insert_output_color_target
+                        .in_set(CameraUpdateSystems),
+                ),
             )
             .add_systems(
                 PostUpdate,
@@ -112,7 +115,7 @@ fn camera_with_render_target_insert_output_color_target(
         Entity,
         (
             With<Camera>,
-            Or<(With<RenderTarget>, With<RenderTargetDoubleBuffered>)>,
+            Or<(With<RenderTarget>, With<RenderColorTarget>)>,
             Without<OutputColorTargetOf>,
             Without<NoAutoConfiguredColorTarget>,
         ),
@@ -128,12 +131,7 @@ fn auto_configure_camera_color_target(
     mut image_assets: ResMut<Assets<Image>>,
     query: Query<
         (Entity, &Camera, &Msaa, &CameraMainTextureUsages, Has<Hdr>),
-        (
-            Without<NoAutoConfiguredColorTarget>,
-            Without<ColorTargetOf>,
-            Without<MsaaColorTargetOf>,
-            Without<MsaaResolveTargetOf>,
-        ),
+        (Without<NoAutoConfiguredColorTarget>, Without<ColorTargetOf>),
     >,
 ) {
     for (entity, camera, msaa, texture_usages, hdr) in query.iter() {
@@ -166,22 +164,6 @@ fn auto_configure_camera_color_target(
             ..Default::default()
         };
 
-        let main_texture_double_buffered = commands
-            .spawn(RenderTargetDoubleBuffered::new(
-                RenderTarget::Image(ImageRenderTarget {
-                    handle: image_assets.add(image_texture_a),
-                    scale_factor: 1.0,
-                }),
-                Some(RenderTarget::Image(ImageRenderTarget {
-                    handle: image_assets.add(image_texture_b),
-                    scale_factor: 1.0,
-                })),
-            ))
-            .id();
-        commands
-            .entity(entity)
-            .insert(ColorTargetOf(main_texture_double_buffered));
-
         if msaa.samples() > 1 {
             image_desc.label = Some("main_texture_multisampled");
             image_desc.sample_count = msaa.samples();
@@ -190,16 +172,39 @@ fn auto_configure_camera_color_target(
                 copy_on_resize: false,
                 ..Default::default()
             };
-            let msaa_texture = commands
-                .spawn(RenderTarget::Image(ImageRenderTarget {
-                    handle: image_assets.add(image_texture_multisampled),
-                    scale_factor: 1.0,
-                }))
+            let msaa_texture = RenderTarget::Image(ImageRenderTarget {
+                handle: image_assets.add(image_texture_multisampled),
+                scale_factor: 1.0,
+            });
+            let main_textures = commands
+                .spawn(RenderColorTarget::new(
+                    RenderTarget::Image(ImageRenderTarget {
+                        handle: image_assets.add(image_texture_a),
+                        scale_factor: 1.0,
+                    }),
+                    Some(RenderTarget::Image(ImageRenderTarget {
+                        handle: image_assets.add(image_texture_b),
+                        scale_factor: 1.0,
+                    })),
+                    Some(msaa_texture),
+                ))
                 .id();
-            commands
-                .entity(entity)
-                .insert(MsaaColorTargetOf(msaa_texture))
-                .insert(MsaaResolveTargetOf(main_texture_double_buffered));
+            commands.entity(entity).insert(ColorTargetOf(main_textures));
+        } else {
+            let main_textures = commands
+                .spawn(RenderColorTarget::new(
+                    RenderTarget::Image(ImageRenderTarget {
+                        handle: image_assets.add(image_texture_a),
+                        scale_factor: 1.0,
+                    }),
+                    Some(RenderTarget::Image(ImageRenderTarget {
+                        handle: image_assets.add(image_texture_b),
+                        scale_factor: 1.0,
+                    })),
+                    None,
+                ))
+                .id();
+            commands.entity(entity).insert(ColorTargetOf(main_textures));
         }
     }
 }
@@ -212,28 +217,21 @@ fn sync_camera_color_target_config(
             &Msaa,
             &CameraMainTextureUsages,
             Has<Hdr>,
-            (&ColorTargetOf, &MsaaColorTargetOf),
+            &ColorTargetOf,
         ),
-        (
-            Without<NoAutoConfiguredColorTarget>,
-            With<MsaaResolveTargetOf>,
-        ),
+        Without<NoAutoConfiguredColorTarget>,
     >,
-    query_render_targets: Query<&RenderTarget>,
-    query_double_buffer_render_targets: Query<&RenderTargetDoubleBuffered>,
+    query_color_render_targets: Query<&RenderColorTarget>,
 ) {
-    for (camera, msaa, texture_usages, hdr, (color_target_of, msaa_color_target_of)) in query.iter()
-    {
+    for (camera, msaa, texture_usages, hdr, color_target_of) in query.iter() {
         let Some(physical_size) = camera.physical_target_size() else {
             continue;
         };
-        let Ok(main_texture_double_buffered) =
-            query_double_buffer_render_targets.get(color_target_of.0)
-        else {
+        let Ok(main_textures) = query_color_render_targets.get(color_target_of.0) else {
             continue;
         };
-        let main_texture_a = main_texture_double_buffered.current_target();
-        let main_texture_b = main_texture_double_buffered.other_target().unwrap();
+        let main_texture_a = main_textures.current_target();
+        let main_texture_b = main_textures.other_target().unwrap();
         let format = if hdr {
             TextureFormat::Rgba16Float
         } else {
@@ -253,9 +251,7 @@ fn sync_camera_color_target_config(
         main_texture_b.texture_descriptor.format = format;
 
         if msaa.samples() > 1 {
-            let Ok(msaa_texture) = query_render_targets.get(msaa_color_target_of.0) else {
-                continue;
-            };
+            let msaa_texture = main_textures.multisampled.as_ref().unwrap();
             let Some(msaa_texture) = image_assets.get_mut(msaa_texture.as_image().unwrap()) else {
                 continue;
             };
@@ -461,47 +457,6 @@ impl NormalizedRenderTargetExt for NormalizedRenderTarget {
     }
 }
 
-impl NormalizedRenderTargetExt for NormalizedRenderTargetDoubleBuffered {
-    fn get_texture_view<'a>(
-        &self,
-        windows: &'a ExtractedWindows,
-        images: &'a RenderAssets<GpuImage>,
-        manual_texture_views: &'a ManualTextureViews,
-    ) -> Option<&'a TextureView> {
-        self.current_target()
-            .get_texture_view(windows, images, manual_texture_views)
-    }
-
-    fn get_texture_view_format<'a>(
-        &self,
-        windows: &'a ExtractedWindows,
-        images: &'a RenderAssets<GpuImage>,
-        manual_texture_views: &'a ManualTextureViews,
-    ) -> Option<TextureFormat> {
-        self.current_target()
-            .get_texture_view_format(windows, images, manual_texture_views)
-    }
-
-    fn get_render_target_info<'a>(
-        &self,
-        resolutions: impl IntoIterator<Item = (Entity, &'a Window)>,
-        images: &Assets<Image>,
-        manual_texture_views: &ManualTextureViews,
-    ) -> Result<RenderTargetInfo, MissingRenderTargetInfoError> {
-        self.current_target()
-            .get_render_target_info(resolutions, images, manual_texture_views)
-    }
-
-    fn is_changed(
-        &self,
-        changed_window_ids: &HashSet<Entity>,
-        changed_image_handles: &HashSet<&AssetId<Image>>,
-    ) -> bool {
-        self.current_target()
-            .is_changed(changed_window_ids, changed_image_handles)
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum MissingRenderTargetInfoError {
     #[error("RenderTarget::Window missing ({window:?}): Make sure the provided entity has a Window component.")]
@@ -630,10 +585,8 @@ pub fn camera_system(
 
 #[derive(Component, Debug)]
 pub struct ExtractedCamera {
-    pub output_color_target: Option<NormalizedRenderTargetDoubleBuffered>,
-    pub main_color_target: Option<NormalizedRenderTargetDoubleBuffered>,
-    pub msaa_color_target: Option<NormalizedRenderTargetDoubleBuffered>,
-    pub msaa_resolve_target: Option<NormalizedRenderTargetDoubleBuffered>,
+    pub output_color_target: Option<NormalizedRenderColorTarget>,
+    pub main_color_target: Option<NormalizedRenderColorTarget>,
     pub physical_viewport_size: Option<UVec2>,
     pub viewport: Option<Viewport>,
     pub render_graph: InternedRenderSubGraph,
@@ -663,16 +616,11 @@ pub fn extract_cameras(
                 Option<&Projection>,
                 Has<NoIndirectDrawing>,
             ),
-            (
-                Option<&ColorTargetOf>,
-                Option<&MsaaColorTargetOf>,
-                Option<&MsaaResolveTargetOf>,
-                Option<&OutputColorTargetOf>,
-            ),
+            (Option<&ColorTargetOf>, Option<&OutputColorTargetOf>),
         )>,
     >,
     render_targets: Extract<Query<&RenderTarget>>,
-    render_targets_double_buffered: Extract<Query<&RenderTargetDoubleBuffered>>,
+    render_color_targets: Extract<Query<&RenderColorTarget>>,
     primary_window: Extract<Query<Entity, With<PrimaryWindow>>>,
     gpu_preprocessing_support: Res<GpuPreprocessingSupport>,
     mapper: Extract<Query<&RenderEntity>>,
@@ -706,12 +654,7 @@ pub fn extract_cameras(
             projection,
             no_indirect_drawing,
         ),
-        (
-            main_color_target_of,
-            msaa_color_target_of,
-            msaa_resolve_target_of,
-            output_color_target_of,
-        ),
+        (main_color_target_of, output_color_target_of),
     ) in query.iter()
     {
         if !camera.is_active {
@@ -760,9 +703,10 @@ pub fn extract_cameras(
                     return None;
                 };
                 if let Ok(t) = render_targets.get(entity) {
+                    // Also accept RenderTarget.
                     t.normalize(primary_window)
-                        .map(NormalizedRenderTargetDoubleBuffered::from)
-                } else if let Ok(t) = render_targets_double_buffered.get(entity) {
+                        .map(NormalizedRenderColorTarget::from)
+                } else if let Ok(t) = render_color_targets.get(entity) {
                     t.normalize(primary_window)
                 } else {
                     None
@@ -770,8 +714,6 @@ pub fn extract_cameras(
             };
             let output_color_target = get_normalized_target(output_color_target_of.map(|t| t.0));
             let main_color_target = get_normalized_target(main_color_target_of.map(|t| t.0));
-            let msaa_color_target = get_normalized_target(msaa_color_target_of.map(|t| t.0));
-            let msaa_resolve_target = get_normalized_target(msaa_resolve_target_of.map(|t| t.0));
 
             let mut commands = commands.entity(render_entity);
 
@@ -779,8 +721,6 @@ pub fn extract_cameras(
                 ExtractedCamera {
                     output_color_target,
                     main_color_target,
-                    msaa_color_target,
-                    msaa_resolve_target,
                     physical_viewport_size: Some(viewport_size),
                     viewport: camera.viewport.clone(),
                     render_graph: camera_render_graph.0,

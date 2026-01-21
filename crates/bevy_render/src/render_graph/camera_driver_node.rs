@@ -40,7 +40,11 @@ impl Node for CameraDriverNode {
             };
 
             let mut run_graph = true;
-            if let Some(NormalizedRenderTarget::Window(window_ref)) = camera.output_color_target {
+            if let Some(NormalizedRenderTarget::Window(window_ref)) = camera
+                .output_color_target
+                .as_ref()
+                .map(|t| t.current_target())
+            {
                 let window_entity = window_ref.entity();
                 if windows
                     .windows

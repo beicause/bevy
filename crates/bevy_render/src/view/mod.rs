@@ -6,7 +6,6 @@ use bevy_camera::{
     NormalizedRenderTarget,
 };
 use bevy_diagnostic::FrameCount;
-use bevy_math::UVec2;
 pub use visibility::*;
 pub use window::*;
 
@@ -20,8 +19,8 @@ use crate::{
     renderer::{RenderDevice, RenderQueue},
     sync_world::MainEntity,
     texture::{
-        CachedTexture, ColorAttachment, DepthAttachment, GpuImage, ManualTextureViews,
-        OutputColorAttachment, TextureCache,
+        CachedTexture, ColorViewAttachment, DepthAttachment, GpuImage, ManualTextureViews,
+        OutputColorAttachment,
     },
     Render, RenderApp, RenderSystems,
 };
@@ -30,7 +29,6 @@ use bevy_app::{App, Plugin};
 use bevy_color::LinearRgba;
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
-use bevy_image::{BevyDefault as _, ToExtents};
 use bevy_math::{mat3, vec2, vec3, Mat3, Mat4, UVec4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use bevy_platform::collections::{hash_map::Entry, HashMap};
 use bevy_reflect::{std_traits::ReflectDefault, Reflect};
@@ -43,7 +41,7 @@ use core::{
 };
 use wgpu::{
     BufferUsages, RenderPassColorAttachment, RenderPassDepthStencilAttachment, StoreOp,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
+    TextureFormat,
 };
 
 /// The matrix that converts from the RGB to the LMS color space.
@@ -617,12 +615,12 @@ pub struct ViewUniformOffset {
 
 #[derive(Component, Clone)]
 pub struct ViewTarget {
-    main_texture_a: ColorAttachment,
-    main_texture_b: Option<ColorAttachment>,
+    main_texture_a: ColorViewAttachment,
+    main_texture_b: Option<ColorViewAttachment>,
     main_texture_format: TextureFormat,
     /// 0 represents `main_textures.a`, 1 represents `main_textures.b`
     /// This is shared across view targets with the same render target
-    main_texture: Option<Arc<AtomicUsize>>,
+    main_texture_flag: Option<Arc<AtomicUsize>>,
     out_texture: OutputColorAttachment,
 }
 
@@ -634,13 +632,24 @@ pub struct ViewTarget {
 pub struct ViewOutputTargetAttachments(HashMap<NormalizedRenderTarget, OutputColorAttachment>);
 
 #[derive(Resource, Default, Deref, DerefMut)]
-pub struct ViewColorTargetAttachments(HashMap<NormalizedRenderTarget, ColorAttachment>);
+pub struct ViewColorTargetAttachments(
+    HashMap<
+        (
+            NormalizedRenderTarget,
+            NormalizedRenderTarget,
+            Option<NormalizedRenderTarget>,
+        ),
+        (
+            ColorViewAttachment,
+            Option<ColorViewAttachment>,
+            TextureFormat,
+        ),
+    >,
+);
 
 pub struct PostProcessWrite<'a> {
     pub source: &'a TextureView,
-    pub source_texture: &'a Texture,
     pub destination: &'a TextureView,
-    pub destination_texture: &'a Texture,
 }
 
 impl From<ColorGrading> for ColorGradingUniform {
@@ -743,7 +752,12 @@ impl ViewTarget {
     /// Retrieve this target's main texture's color attachment.
     pub fn get_color_attachment(&self) -> RenderPassColorAttachment<'_> {
         if let Some(b) = &self.main_texture_b
-            && self.main_texture.as_ref().unwrap().load(Ordering::SeqCst) == 1
+            && self
+                .main_texture_flag
+                .as_ref()
+                .unwrap()
+                .load(Ordering::SeqCst)
+                == 1
         {
             b.get_attachment()
         } else {
@@ -754,7 +768,12 @@ impl ViewTarget {
     /// Retrieve this target's "unsampled" main texture's color attachment.
     pub fn get_unsampled_color_attachment(&self) -> RenderPassColorAttachment<'_> {
         if let Some(b) = &self.main_texture_b
-            && self.main_texture.as_ref().unwrap().load(Ordering::SeqCst) == 1
+            && self
+                .main_texture_flag
+                .as_ref()
+                .unwrap()
+                .load(Ordering::SeqCst)
+                == 1
         {
             b.get_unsampled_attachment()
         } else {
@@ -763,24 +782,18 @@ impl ViewTarget {
     }
 
     /// The "main" unsampled texture.
-    pub fn main_texture(&self) -> &Texture {
-        if let Some(b) = &self.main_texture_b
-            && self.main_texture.as_ref().unwrap().load(Ordering::SeqCst) == 1
-        {
-            &b.texture.texture
-        } else {
-            &self.main_texture_a.texture.texture
-        }
-    }
-
-    /// The "main" unsampled texture.
     pub fn main_texture_view(&self) -> &TextureView {
         if let Some(b) = &self.main_texture_b
-            && self.main_texture.as_ref().unwrap().load(Ordering::SeqCst) == 1
+            && self
+                .main_texture_flag
+                .as_ref()
+                .unwrap()
+                .load(Ordering::SeqCst)
+                == 1
         {
-            &b.texture.default_view
+            &b.texture
         } else {
-            &self.main_texture_a.texture.default_view
+            &self.main_texture_a.texture
         }
     }
 
@@ -794,27 +807,22 @@ impl ViewTarget {
         let Some(b) = &self.main_texture_b else {
             panic!("Main texture is not double buffered")
         };
-        if self.main_texture.as_ref().unwrap().load(Ordering::SeqCst) == 0 {
-            &b.texture.default_view
-        } else {
-            &self.main_texture_a.texture.default_view
-        }
-    }
-
-    /// The "main" sampled texture.
-    pub fn sampled_main_texture(&self) -> Option<&Texture> {
-        self.main_texture_a
-            .multisampled
+        if self
+            .main_texture_flag
             .as_ref()
-            .map(|sampled| &sampled.texture)
+            .unwrap()
+            .load(Ordering::SeqCst)
+            == 0
+        {
+            &b.texture
+        } else {
+            &self.main_texture_a.texture
+        }
     }
 
     /// The "main" sampled texture view.
     pub fn sampled_main_texture_view(&self) -> Option<&TextureView> {
-        self.main_texture_a
-            .multisampled
-            .as_ref()
-            .map(|sampled| &sampled.default_view)
+        self.main_texture_a.multisampled.as_ref()
     }
 
     #[inline]
@@ -858,7 +866,7 @@ impl ViewTarget {
             panic!("Main texture is not double buffered")
         };
         let old_is_a_main_texture = self
-            .main_texture
+            .main_texture_flag
             .as_ref()
             .unwrap()
             .fetch_xor(1, Ordering::SeqCst);
@@ -866,18 +874,14 @@ impl ViewTarget {
         if old_is_a_main_texture == 0 {
             main_texture_b.mark_as_cleared();
             PostProcessWrite {
-                source: &self.main_texture_a.texture.default_view,
-                source_texture: &self.main_texture_a.texture.texture,
-                destination: &main_texture_b.texture.default_view,
-                destination_texture: &main_texture_b.texture.texture,
+                source: &self.main_texture_a.texture,
+                destination: &main_texture_b.texture,
             }
         } else {
             self.main_texture_a.mark_as_cleared();
             PostProcessWrite {
-                source: &main_texture_b.texture.default_view,
-                source_texture: &main_texture_b.texture.texture,
-                destination: &self.main_texture_a.texture.default_view,
-                destination_texture: &self.main_texture_a.texture.texture,
+                source: &main_texture_b.texture,
+                destination: &self.main_texture_a.texture,
             }
         }
     }
@@ -1004,18 +1008,20 @@ pub fn prepare_view_attachments(
     images: Res<RenderAssets<GpuImage>>,
     manual_texture_views: Res<ManualTextureViews>,
     cameras: Query<&ExtractedCamera>,
+    clear_color_global: Res<ClearColor>,
     mut view_output_target_attachments: ResMut<ViewOutputTargetAttachments>,
     mut view_color_target_attachments: ResMut<ViewColorTargetAttachments>,
 ) {
     for camera in cameras.iter() {
         if let Some(target) = &camera.output_color_target {
-            match view_output_target_attachments.entry(target.current_target().clone()) {
+            let current_target = target.current_target();
+            match view_output_target_attachments.entry(current_target.clone()) {
                 Entry::Occupied(_) => {}
                 Entry::Vacant(entry) => {
-                    let Some(attachment) = target
+                    let Some(attachment) = current_target
                         .get_texture_view(&windows, &images, &manual_texture_views)
                         .cloned()
-                        .zip(target.get_texture_view_format(
+                        .zip(current_target.get_texture_view_format(
                             &windows,
                             &images,
                             &manual_texture_views,
@@ -1025,6 +1031,64 @@ pub fn prepare_view_attachments(
                         continue;
                     };
                     entry.insert(attachment);
+                }
+            };
+        } else if let Some(target) = &camera.main_color_target {
+            match view_color_target_attachments.entry((
+                target.main_a.clone(),
+                target.main_b.clone(),
+                target.multisampled.clone(),
+            )) {
+                Entry::Occupied(_) => {}
+                Entry::Vacant(entry) => {
+                    let Some((main_view_a, main_view_format)) = target
+                        .main_a
+                        .get_texture_view(&windows, &images, &manual_texture_views)
+                        .cloned()
+                        .zip(target.main_a.get_texture_view_format(
+                            &windows,
+                            &images,
+                            &manual_texture_views,
+                        ))
+                    else {
+                        continue;
+                    };
+                    let main_view_b = target
+                        .main_b
+                        .get_texture_view(&windows, &images, &manual_texture_views)
+                        .cloned();
+                    let multisampled = if let Some(multisampled) = target.multisampled.as_ref() {
+                        multisampled
+                            .get_texture_view(&windows, &images, &manual_texture_views)
+                            .cloned()
+                    } else {
+                        None
+                    };
+                    let clear_color = match camera.clear_color {
+                        ClearColorConfig::Custom(color) => Some(color),
+                        ClearColorConfig::None => None,
+                        _ => Some(clear_color_global.0),
+                    };
+
+                    let converted_clear_color = clear_color.map(Into::into);
+
+                    entry.insert((
+                        ColorViewAttachment::new(
+                            main_view_a,
+                            multisampled.clone(),
+                            None,
+                            converted_clear_color,
+                        ),
+                        main_view_b.map(|main_view_b| {
+                            ColorViewAttachment::new(
+                                main_view_b,
+                                multisampled,
+                                None,
+                                converted_clear_color,
+                            )
+                        }),
+                        main_view_format,
+                    ));
                 }
             };
         }
@@ -1056,20 +1120,28 @@ pub fn cleanup_view_targets_for_resize(
 
 pub fn prepare_view_targets(
     mut commands: Commands,
-    clear_color_global: Res<ClearColor>,
-    render_device: Res<RenderDevice>,
-    mut texture_cache: ResMut<TextureCache>,
-    cameras: Query<(Entity, &ExtractedCamera, &ExtractedView)>,
-    view_target_attachments: Res<ViewOutputTargetAttachments>,
+    cameras: Query<(Entity, &ExtractedCamera)>,
+    view_output_target_attachments: Res<ViewOutputTargetAttachments>,
+    view_color_target_attachments: Res<ViewColorTargetAttachments>,
 ) {
-    for (entity, camera, view) in cameras.iter() {
-        let (Some(viewport_size), Some(out_attachment)) = (
-            camera.physical_viewport_size,
+    for (entity, camera) in cameras.iter() {
+        let (
+            Some(out_attachment),
+            Some((main_color_attachment_a, main_color_attachment_b, main_texture_format)),
+        ) = (
             camera
                 .output_color_target
                 .as_ref()
-                .and_then(|target| view_target_attachments.get(target.current_target())),
-        ) else {
+                .and_then(|target| view_output_target_attachments.get(target.current_target())),
+            camera.main_color_target.as_ref().and_then(|target| {
+                view_color_target_attachments.get(&(
+                    target.main_a.clone(),
+                    target.main_a.clone(),
+                    target.multisampled.clone(),
+                ))
+            }),
+        )
+        else {
             // If we can't find an output attachment we need to remove the ViewTarget
             // component to make sure the camera doesn't try rendering to an invalid
             // output attachment.
@@ -1078,19 +1150,14 @@ pub fn prepare_view_targets(
             continue;
         };
 
-        let clear_color = match camera.clear_color {
-            ClearColorConfig::Custom(color) => Some(color),
-            ClearColorConfig::None => None,
-            _ => Some(clear_color_global.0),
-        };
-
-        let converted_clear_color = clear_color.map(Into::into);
-
         commands.entity(entity).insert(ViewTarget {
-            main_texture: camera.main_color_target.and_then(|t| t.main_texture),
-            main_texture_a: camera.main_color_target.map(|t| t.a),
-            main_texture_b: camera.main_color_target.map(|t| t.b),
-            main_texture_format: out_attachment.view_format,
+            main_texture_flag: camera
+                .main_color_target
+                .as_ref()
+                .and_then(|t| t.main_target_flag.clone()),
+            main_texture_a: main_color_attachment_a.clone(),
+            main_texture_b: main_color_attachment_b.clone(),
+            main_texture_format: *main_texture_format,
             out_texture: out_attachment.clone(),
         });
     }

@@ -87,7 +87,7 @@ pub fn render_system(
             for window in windows.values_mut() {
                 let view_needs_present = views.iter().any(|(view_target, camera)| {
                     matches!(
-                        camera.output_color_target,
+                        camera.output_color_target.as_ref().map(|t|t.current_target()),
                         Some(NormalizedRenderTarget::Window(w)) if w.entity() == window.entity
                     ) && view_target.needs_present()
                 });
