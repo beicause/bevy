@@ -17,15 +17,12 @@ use crate::{
 use bevy_app::{App, Plugin, PostStartup, PostUpdate};
 use bevy_asset::{AssetEvent, AssetEventSystems, AssetId, Assets};
 use bevy_camera::{
-    color_target::{
-        MainColorTargetOf, NoAutoConfiguredColorTarget, NormalizedRenderColorTarget,
-        OutputColorTarget, OutputColorTargetOf, RenderColorTarget,
-    },
+    color_target::{MainColorTarget, NoAutoConfiguredColorTarget, UseMainColorTarget},
     primitives::Frustum,
     visibility::{self, RenderLayers, VisibleEntities},
     Camera, Camera2d, Camera3d, CameraMainTextureUsages, CameraOutputMode, CameraUpdateSystems,
-    ClearColor, ClearColorConfig, Exposure, ImageRenderTarget, ManualTextureViewHandle,
-    NormalizedRenderTarget, Projection, RenderTarget, RenderTargetInfo, Viewport,
+    ClearColor, ClearColorConfig, Exposure, ManualTextureViewHandle, NormalizedRenderTarget,
+    Projection, RenderTarget, RenderTargetInfo, Viewport,
 };
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::{
@@ -38,7 +35,6 @@ use bevy_ecs::{
     prelude::With,
     query::{Has, QueryItem, Without},
     reflect::ReflectComponent,
-    relationship::Relationship,
     resource::Resource,
     schedule::IntoScheduleConfigs,
     system::{Commands, Query, Res, ResMut},
@@ -58,8 +54,7 @@ pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.register_required_components::<Camera2d, Msaa>()
-            .register_required_components::<Camera3d, Msaa>()
+        app.register_required_components::<Camera, Msaa>()
             .register_required_components::<Camera, SyncToRenderWorld>()
             .register_required_components::<Camera3d, ColorGrading>()
             .register_required_components::<Camera3d, Exposure>()
@@ -77,7 +72,7 @@ impl Plugin for CameraPlugin {
                     )
                         .chain()
                         .in_set(CameraUpdateSystems),
-                    configure_camera_output_color_target.in_set(CameraUpdateSystems),
+                    insert_camera_components_if_auto_configured.in_set(CameraUpdateSystems),
                 ),
             )
             .add_systems(
@@ -108,22 +103,18 @@ impl Plugin for CameraPlugin {
     }
 }
 
-fn configure_camera_output_color_target(
+fn insert_camera_components_if_auto_configured(
     mut commands: Commands,
     query: Query<
-        (Entity, Has<RenderTarget>, Has<RenderColorTarget>),
-        (
-            With<Camera>,
-            Without<OutputColorTargetOf>,
-            Without<NoAutoConfiguredColorTarget>,
-        ),
+        (Entity, Has<CameraMainTextureUsages>),
+        (With<Camera>, Without<NoAutoConfiguredColorTarget>),
     >,
 ) {
-    for (entity, has_render_target, has_render_color_target) in query.iter() {
-        if !has_render_target && !has_render_color_target {
-            commands.entity(entity).insert(RenderTarget::default());
+    for (entity, has_texture_usages) in query.iter() {
+        let mut entity_commands = commands.entity(entity);
+        if !has_texture_usages {
+            entity_commands.insert(CameraMainTextureUsages::default());
         }
-        commands.entity(entity).insert(OutputColorTargetOf(entity));
     }
 }
 
@@ -134,7 +125,7 @@ fn configure_camera_color_target(
         (Entity, &Camera, &Msaa, &CameraMainTextureUsages, Has<Hdr>),
         (
             Without<NoAutoConfiguredColorTarget>,
-            Without<MainColorTargetOf>,
+            Without<UseMainColorTarget>,
         ),
     >,
 ) {
@@ -168,7 +159,7 @@ fn configure_camera_color_target(
             ..Default::default()
         };
 
-        if msaa.samples() > 1 {
+        let msaa_texture = if msaa.samples() > 1 {
             image_desc.label = Some("main_texture_multisampled");
             image_desc.sample_count = msaa.samples();
             let image_texture_multisampled = Image {
@@ -176,44 +167,20 @@ fn configure_camera_color_target(
                 copy_on_resize: false,
                 ..Default::default()
             };
-            let msaa_texture = RenderTarget::Image(ImageRenderTarget {
-                handle: image_assets.add(image_texture_multisampled),
-                scale_factor: 1.0,
-            });
-            let main_textures = commands
-                .spawn(RenderColorTarget::new(
-                    RenderTarget::Image(ImageRenderTarget {
-                        handle: image_assets.add(image_texture_a),
-                        scale_factor: 1.0,
-                    }),
-                    Some(RenderTarget::Image(ImageRenderTarget {
-                        handle: image_assets.add(image_texture_b),
-                        scale_factor: 1.0,
-                    })),
-                    Some(msaa_texture),
-                ))
-                .id();
-            commands
-                .entity(entity)
-                .insert(MainColorTargetOf(main_textures));
+            Some(image_assets.add(image_texture_multisampled))
         } else {
-            let main_textures = commands
-                .spawn(RenderColorTarget::new(
-                    RenderTarget::Image(ImageRenderTarget {
-                        handle: image_assets.add(image_texture_a),
-                        scale_factor: 1.0,
-                    }),
-                    Some(RenderTarget::Image(ImageRenderTarget {
-                        handle: image_assets.add(image_texture_b),
-                        scale_factor: 1.0,
-                    })),
-                    None,
-                ))
-                .id();
-            commands
-                .entity(entity)
-                .insert(MainColorTargetOf(main_textures));
-        }
+            None
+        };
+        let main_textures = commands
+            .spawn(MainColorTarget::new(
+                image_assets.add(image_texture_a),
+                Some(image_assets.add(image_texture_b)),
+                msaa_texture,
+            ))
+            .id();
+        commands
+            .entity(entity)
+            .insert(UseMainColorTarget(main_textures));
     }
 }
 
@@ -225,11 +192,11 @@ fn sync_camera_color_target_config(
             &Msaa,
             &CameraMainTextureUsages,
             Has<Hdr>,
-            &MainColorTargetOf,
+            &UseMainColorTarget,
         ),
         Without<NoAutoConfiguredColorTarget>,
     >,
-    query_color_render_targets: Query<&RenderColorTarget>,
+    query_color_render_targets: Query<&MainColorTarget>,
 ) {
     for (camera, msaa, texture_usages, hdr, color_target_of) in query.iter() {
         let Some(physical_size) = camera.physical_target_size() else {
@@ -245,13 +212,13 @@ fn sync_camera_color_target_config(
         } else {
             TextureFormat::Rgba8UnormSrgb
         };
-        let Some(main_texture_a) = image_assets.get_mut(main_texture_a.as_image().unwrap()) else {
+        let Some(main_texture_a) = image_assets.get_mut(main_texture_a) else {
             continue;
         };
         main_texture_a.resize(physical_size.to_extents());
         main_texture_a.texture_descriptor.usage = texture_usages.0;
         main_texture_a.texture_descriptor.format = format;
-        let Some(main_texture_b) = image_assets.get_mut(main_texture_b.as_image().unwrap()) else {
+        let Some(main_texture_b) = image_assets.get_mut(main_texture_b) else {
             continue;
         };
         main_texture_b.resize(physical_size.to_extents());
@@ -260,7 +227,7 @@ fn sync_camera_color_target_config(
 
         if msaa.samples() > 1 {
             let msaa_texture = main_textures.multisampled.as_ref().unwrap();
-            let Some(msaa_texture) = image_assets.get_mut(msaa_texture.as_image().unwrap()) else {
+            let Some(msaa_texture) = image_assets.get_mut(msaa_texture) else {
                 continue;
             };
             msaa_texture.resize(physical_size.to_extents());
@@ -498,8 +465,7 @@ pub fn camera_system(
     windows: Query<(Entity, &Window)>,
     images: Res<Assets<Image>>,
     manual_texture_views: Res<ManualTextureViews>,
-    mut cameras: Query<(&mut Camera, &OutputColorTargetOf, &mut Projection)>,
-    out_color_targets: Query<&RenderTarget, With<OutputColorTarget>>,
+    mut cameras: Query<(&mut Camera, &RenderTarget, &mut Projection)>,
 ) -> Result<(), BevyError> {
     let primary_window = primary_window.iter().next();
 
@@ -520,17 +486,13 @@ pub fn camera_system(
         })
         .collect();
 
-    for (mut camera, out_color_target_of, mut camera_projection) in &mut cameras {
-        let Ok(out_color_target) = out_color_targets.get(out_color_target_of.get()) else {
-            continue;
-        };
-
+    for (mut camera, render_target, mut camera_projection) in &mut cameras {
         let mut viewport_size = camera
             .viewport
             .as_ref()
             .map(|viewport| viewport.physical_size);
 
-        if let Some(normalized_target) = out_color_target.normalize(primary_window)
+        if let Some(normalized_target) = render_target.normalize(primary_window)
             && (normalized_target.is_changed(&changed_window_ids, &changed_image_handles)
                 || camera.is_added()
                 || camera_projection.is_changed()
@@ -593,8 +555,8 @@ pub fn camera_system(
 
 #[derive(Component, Debug)]
 pub struct ExtractedCamera {
-    pub output_color_target: Option<NormalizedRenderColorTarget>,
-    pub main_color_target: Option<NormalizedRenderColorTarget>,
+    pub output_color_target: Option<NormalizedRenderTarget>,
+    pub main_color_target: MainColorTarget,
     pub physical_viewport_size: Option<UVec2>,
     pub viewport: Option<Viewport>,
     pub render_graph: InternedRenderSubGraph,
@@ -602,6 +564,7 @@ pub struct ExtractedCamera {
     pub output_mode: CameraOutputMode,
     pub clear_color: ClearColorConfig,
     pub exposure: f32,
+    pub hdr: bool,
 }
 
 pub fn extract_cameras(
@@ -611,11 +574,13 @@ pub fn extract_cameras(
             Entity,
             RenderEntity,
             &Camera,
+            &RenderTarget,
             &CameraRenderGraph,
             &GlobalTransform,
             &VisibleEntities,
             &Frustum,
             (
+                Has<Hdr>,
                 Option<&ColorGrading>,
                 Option<&Exposure>,
                 Option<&TemporalJitter>,
@@ -624,11 +589,10 @@ pub fn extract_cameras(
                 Option<&Projection>,
                 Has<NoIndirectDrawing>,
             ),
-            (Option<&MainColorTargetOf>, Option<&OutputColorTargetOf>),
+            Option<&UseMainColorTarget>,
         )>,
     >,
-    render_targets: Extract<Query<&RenderTarget>>,
-    render_color_targets: Extract<Query<&RenderColorTarget>>,
+    main_color_target: Extract<Query<&MainColorTarget>>,
     primary_window: Extract<Query<Entity, With<PrimaryWindow>>>,
     gpu_preprocessing_support: Res<GpuPreprocessingSupport>,
     mapper: Extract<Query<&RenderEntity>>,
@@ -649,11 +613,13 @@ pub fn extract_cameras(
         main_entity,
         render_entity,
         camera,
+        render_target,
         camera_render_graph,
         transform,
         visible_entities,
         frustum,
         (
+            hdr,
             color_grading,
             exposure,
             temporal_jitter,
@@ -662,7 +628,7 @@ pub fn extract_cameras(
             projection,
             no_indirect_drawing,
         ),
-        (main_color_target_of, output_color_target_of),
+        use_main_color_target,
     ) in query.iter()
     {
         if !camera.is_active {
@@ -671,6 +637,12 @@ pub fn extract_cameras(
                 .remove::<ExtractedCameraComponents>();
             continue;
         }
+
+        let Some(main_color_target) = use_main_color_target.and_then(|use_main_color_target| {
+            main_color_target.get(use_main_color_target.0).ok().cloned()
+        }) else {
+            continue;
+        };
 
         let color_grading = color_grading.unwrap_or(&ColorGrading::default()).clone();
 
@@ -706,22 +678,7 @@ pub fn extract_cameras(
                     .collect(),
             };
 
-            let get_normalized_target = |entity: Option<Entity>| {
-                let Some(entity) = entity else {
-                    return None;
-                };
-                if let Ok(t) = render_targets.get(entity) {
-                    // Also accept RenderTarget.
-                    t.normalize(primary_window)
-                        .map(NormalizedRenderColorTarget::from)
-                } else if let Ok(t) = render_color_targets.get(entity) {
-                    t.normalize(primary_window)
-                } else {
-                    None
-                }
-            };
-            let output_color_target = get_normalized_target(output_color_target_of.map(|t| t.0));
-            let main_color_target = get_normalized_target(main_color_target_of.map(|t| t.0));
+            let output_color_target = render_target.normalize(primary_window);
 
             let mut commands = commands.entity(render_entity);
 
@@ -738,6 +695,7 @@ pub fn extract_cameras(
                     exposure: exposure
                         .map(Exposure::exposure)
                         .unwrap_or_else(|| Exposure::default().exposure()),
+                    hdr,
                 },
                 ExtractedView {
                     retained_view_entity: RetainedViewEntity::new(main_entity.into(), None, 0),
@@ -747,6 +705,7 @@ pub fn extract_cameras(
                     viewport: UVec4::new(0, 0, viewport_size.x, viewport_size.y),
                     color_grading,
                     invert_culling: camera.invert_culling,
+                    hdr,
                 },
                 render_visible_entities,
                 *frustum,
@@ -819,7 +778,7 @@ pub fn sort_cameras(
         if let Some(previous_order) = previous_order
             && previous_order == new_order
         {
-            ambiguities.insert(new_order.clone());
+            ambiguities.insert(new_order);
         }
         previous_order = Some(new_order);
     }

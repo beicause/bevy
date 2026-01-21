@@ -251,7 +251,7 @@ fn init_pipeline<T: FullscreenMaterial>(
     desc.fragment.as_mut().unwrap().targets[0]
         .as_mut()
         .unwrap()
-        .format = ViewTarget::TEXTURE_FORMAT_HDR;
+        .format = TextureFormat::Rgba16Float;
     let pipeline_id_hdr = pipeline_cache.queue_render_pipeline(desc);
     commands.insert_resource(FullscreenMaterialPipeline {
         layout,

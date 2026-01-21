@@ -7,7 +7,6 @@ use bevy_ecs::{
     entity::{EntityHashMap, EntityHashSet},
     prelude::*,
 };
-use bevy_image::BevyDefault as _;
 use bevy_render::{
     render_resource::{
         binding_types::{storage_buffer_sized, texture_depth_2d, uniform_buffer},
@@ -17,7 +16,7 @@ use bevy_render::{
         TextureFormat,
     },
     renderer::{RenderAdapter, RenderDevice},
-    view::{ExtractedView, ViewTarget, ViewUniform, ViewUniforms},
+    view::{ViewTarget, ViewUniform, ViewUniforms},
     Render, RenderApp, RenderSystems,
 };
 use bevy_shader::ShaderDefVal;
@@ -136,7 +135,7 @@ pub struct OitResolvePipelineId(pub CachedRenderPipelineId);
 /// This key is used to cache the pipeline id and to specialize the render pipeline descriptor.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct OitResolvePipelineKey {
-    hdr: bool,
+    target_format: TextureFormat,
     layer_count: i32,
 }
 
@@ -145,11 +144,7 @@ pub fn queue_oit_resolve_pipeline(
     pipeline_cache: Res<PipelineCache>,
     resolve_pipeline: Res<OitResolvePipeline>,
     views: Query<
-        (
-            Entity,
-            &ExtractedView,
-            &OrderIndependentTransparencySettings,
-        ),
+        (Entity, &ViewTarget, &OrderIndependentTransparencySettings),
         With<OrderIndependentTransparencySettings>,
     >,
     fullscreen_shader: Res<FullscreenShader>,
@@ -159,10 +154,10 @@ pub fn queue_oit_resolve_pipeline(
     mut cached_pipeline_id: Local<EntityHashMap<(OitResolvePipelineKey, CachedRenderPipelineId)>>,
 ) {
     let mut current_view_entities = EntityHashSet::default();
-    for (e, view, oit_settings) in &views {
+    for (e, view_target, oit_settings) in &views {
         current_view_entities.insert(e);
         let key = OitResolvePipelineKey {
-            hdr: view.hdr,
+            target_format: view_target.main_texture_view_format(),
             layer_count: oit_settings.layer_count,
         };
 
@@ -199,12 +194,6 @@ fn specialize_oit_resolve_pipeline(
     fullscreen_shader: &FullscreenShader,
     asset_server: &AssetServer,
 ) -> RenderPipelineDescriptor {
-    let format = if key.hdr {
-        ViewTarget::TEXTURE_FORMAT_HDR
-    } else {
-        TextureFormat::bevy_default()
-    };
-
     RenderPipelineDescriptor {
         label: Some("oit_resolve_pipeline".into()),
         layout: vec![
@@ -218,7 +207,7 @@ fn specialize_oit_resolve_pipeline(
                 key.layer_count as u32,
             )],
             targets: vec![Some(ColorTargetState {
-                format,
+                format: key.target_format,
                 blend: Some(BlendState {
                     color: BlendComponent::OVER,
                     alpha: BlendComponent::OVER,

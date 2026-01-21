@@ -1,7 +1,7 @@
 use bevy_app::Plugin;
 use bevy_asset::{embedded_asset, load_embedded_asset, AssetId, AssetServer, Handle};
 use bevy_camera::{visibility::ViewVisibility, Camera2d};
-use bevy_render::RenderStartup;
+use bevy_render::{view::ViewTarget, RenderStartup};
 use bevy_shader::{load_shader_library, Shader, ShaderDefVal, ShaderSettings};
 
 use crate::{tonemapping_pipeline_key, Material2dBindGroupId};
@@ -20,7 +20,6 @@ use bevy_ecs::{
     query::ROQueryItem,
     system::{lifetimeless::*, SystemParamItem},
 };
-use bevy_image::BevyDefault;
 use bevy_math::{Affine3, Vec4};
 use bevy_mesh::{Mesh, Mesh2d, MeshTag, MeshVertexBufferLayoutRef};
 use bevy_render::prelude::Msaa;
@@ -45,7 +44,7 @@ use bevy_render::{
     renderer::RenderDevice,
     sync_world::{MainEntity, MainEntityHashMap},
     texture::{FallbackImage, GpuImage},
-    view::{ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
+    view::{ExtractedView, ViewUniform, ViewUniformOffset, ViewUniforms},
     Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
 };
 use bevy_transform::components::GlobalTransform;
@@ -125,15 +124,16 @@ pub fn check_views_need_specialization(
     views: Query<(
         &MainEntity,
         &ExtractedView,
+        &ViewTarget,
         &Msaa,
         Option<&Tonemapping>,
         Option<&DebandDither>,
     )>,
     ticks: SystemChangeTick,
 ) {
-    for (view_entity, view, msaa, tonemapping, dither) in &views {
+    for (view_entity, view, view_target, msaa, tonemapping, dither) in &views {
         let mut view_key = Mesh2dPipelineKey::from_msaa_samples(msaa.samples())
-            | Mesh2dPipelineKey::from_hdr(view.hdr);
+            | Mesh2dPipelineKey::from_color_target_format(view_target.main_texture_view_format());
 
         if !view.hdr {
             if let Some(tonemapping) = tonemapping {
@@ -440,6 +440,18 @@ bitflags::bitflags! {
         const TONEMAP_METHOD_SOMEWHAT_BORING_DISPLAY_TRANSFORM = 5 << Self::TONEMAP_METHOD_SHIFT_BITS;
         const TONEMAP_METHOD_TONY_MC_MAPFACE    = 6 << Self::TONEMAP_METHOD_SHIFT_BITS;
         const TONEMAP_METHOD_BLENDER_FILMIC     = 7 << Self::TONEMAP_METHOD_SHIFT_BITS;
+        const COLOR_TARGET_FORMAT_RESERVED_BITS = Self::COLOR_TARGET_FORMAT_MASK_BITS << Self::COLOR_TARGET_FORMAT_SHIFT_BITS;
+        const COLOR_TARGET_FORMAT_R8UNORM = 0 << Self::COLOR_TARGET_FORMAT_SHIFT_BITS;
+        const COLOR_TARGET_FORMAT_RG8UNORM = 1  << Self::COLOR_TARGET_FORMAT_SHIFT_BITS;
+        const COLOR_TARGET_FORMAT_RGBA8UNORM = 2 << Self::COLOR_TARGET_FORMAT_SHIFT_BITS;
+        const COLOR_TARGET_FORMAT_RGBA8UNORMSRGB = 3 << Self::COLOR_TARGET_FORMAT_SHIFT_BITS;
+        const COLOR_TARGET_FORMAT_BGRA8UNORM = 4 << Self::COLOR_TARGET_FORMAT_SHIFT_BITS;
+        const COLOR_TARGET_FORMAT_BGRA8UNORMSRGB = 5 << Self::COLOR_TARGET_FORMAT_SHIFT_BITS;
+        const COLOR_TARGET_FORMAT_R16FLOAT = 6 << Self::COLOR_TARGET_FORMAT_SHIFT_BITS;
+        const COLOR_TARGET_FORMAT_RG16FLOAT = 7 << Self::COLOR_TARGET_FORMAT_SHIFT_BITS;
+        const COLOR_TARGET_FORMAT_RGBA16FLOAT = 8 << Self::COLOR_TARGET_FORMAT_SHIFT_BITS;
+        const COLOR_TARGET_FORMAT_RB11B10FLOAT = 9 << Self::COLOR_TARGET_FORMAT_SHIFT_BITS;
+        const COLOR_TARGET_FORMAT_RGB10A2UNORM = 10 << Self::COLOR_TARGET_FORMAT_SHIFT_BITS;
     }
 }
 
@@ -451,19 +463,14 @@ impl Mesh2dPipelineKey {
     const TONEMAP_METHOD_MASK_BITS: u32 = 0b111;
     const TONEMAP_METHOD_SHIFT_BITS: u32 =
         Self::PRIMITIVE_TOPOLOGY_SHIFT_BITS - Self::TONEMAP_METHOD_MASK_BITS.count_ones();
+    const COLOR_TARGET_FORMAT_MASK_BITS: u32 = 0b1111;
+    const COLOR_TARGET_FORMAT_SHIFT_BITS: u32 =
+        Self::TONEMAP_METHOD_SHIFT_BITS - Self::COLOR_TARGET_FORMAT_MASK_BITS.count_ones();
 
     pub fn from_msaa_samples(msaa_samples: u32) -> Self {
         let msaa_bits =
             (msaa_samples.trailing_zeros() & Self::MSAA_MASK_BITS) << Self::MSAA_SHIFT_BITS;
         Self::from_bits_retain(msaa_bits)
-    }
-
-    pub fn from_hdr(hdr: bool) -> Self {
-        if hdr {
-            Mesh2dPipelineKey::HDR
-        } else {
-            Mesh2dPipelineKey::NONE
-        }
     }
 
     pub fn msaa_samples(&self) -> u32 {
@@ -487,6 +494,57 @@ impl Mesh2dPipelineKey {
             x if x == PrimitiveTopology::TriangleList as u32 => PrimitiveTopology::TriangleList,
             x if x == PrimitiveTopology::TriangleStrip as u32 => PrimitiveTopology::TriangleStrip,
             _ => PrimitiveTopology::default(),
+        }
+    }
+
+    /// Create a pipeline key from view target format.
+    #[inline]
+    pub fn from_color_target_format(format: TextureFormat) -> Self {
+        match format {
+            TextureFormat::R8Unorm => Self::COLOR_TARGET_FORMAT_R8UNORM,
+            TextureFormat::Rg8Unorm => Self::COLOR_TARGET_FORMAT_RG8UNORM,
+            TextureFormat::Rgba8Unorm => Self::COLOR_TARGET_FORMAT_RGBA8UNORM,
+            TextureFormat::Rgba8UnormSrgb => Self::COLOR_TARGET_FORMAT_RGBA8UNORMSRGB,
+            TextureFormat::Bgra8Unorm => Self::COLOR_TARGET_FORMAT_BGRA8UNORM,
+            TextureFormat::Bgra8UnormSrgb => Self::COLOR_TARGET_FORMAT_BGRA8UNORMSRGB,
+            TextureFormat::R16Float => Self::COLOR_TARGET_FORMAT_R16FLOAT,
+            TextureFormat::Rg16Float => Self::COLOR_TARGET_FORMAT_RG16FLOAT,
+            TextureFormat::Rgba16Float => Self::COLOR_TARGET_FORMAT_RGBA16FLOAT,
+            TextureFormat::Rg11b10Ufloat => Self::COLOR_TARGET_FORMAT_RB11B10FLOAT,
+            TextureFormat::Rgb10a2Unorm => Self::COLOR_TARGET_FORMAT_RGB10A2UNORM,
+            _ => unreachable!("Unsupported view target format"),
+        }
+    }
+
+    /// Get the view target format of this pipeline key.
+    #[inline]
+    pub fn color_target_format(&self) -> TextureFormat {
+        let target_format = *self & Self::COLOR_TARGET_FORMAT_RESERVED_BITS;
+
+        if target_format == Self::COLOR_TARGET_FORMAT_R8UNORM {
+            TextureFormat::R8Unorm
+        } else if target_format == Self::COLOR_TARGET_FORMAT_RG8UNORM {
+            TextureFormat::Rg8Unorm
+        } else if target_format == Self::COLOR_TARGET_FORMAT_RGBA8UNORM {
+            TextureFormat::Rgba8Unorm
+        } else if target_format == Self::COLOR_TARGET_FORMAT_RGBA8UNORMSRGB {
+            TextureFormat::Rgba8UnormSrgb
+        } else if target_format == Self::COLOR_TARGET_FORMAT_BGRA8UNORM {
+            TextureFormat::Bgra8Unorm
+        } else if target_format == Self::COLOR_TARGET_FORMAT_BGRA8UNORMSRGB {
+            TextureFormat::Bgra8UnormSrgb
+        } else if target_format == Self::COLOR_TARGET_FORMAT_R16FLOAT {
+            TextureFormat::R16Float
+        } else if target_format == Self::COLOR_TARGET_FORMAT_RG16FLOAT {
+            TextureFormat::Rg16Float
+        } else if target_format == Self::COLOR_TARGET_FORMAT_RGBA16FLOAT {
+            TextureFormat::Rgba16Float
+        } else if target_format == Self::COLOR_TARGET_FORMAT_RB11B10FLOAT {
+            TextureFormat::Rg11b10Ufloat
+        } else if target_format == Self::COLOR_TARGET_FORMAT_RGB10A2UNORM {
+            TextureFormat::Rgb10a2Unorm
+        } else {
+            unreachable!("Unsupported view target format")
         }
     }
 }
@@ -579,11 +637,6 @@ impl SpecializedMeshPipeline for Mesh2dPipeline {
 
         let vertex_buffer_layout = layout.0.get_layout(&vertex_attributes)?;
 
-        let format = match key.contains(Mesh2dPipelineKey::HDR) {
-            true => ViewTarget::TEXTURE_FORMAT_HDR,
-            false => TextureFormat::bevy_default(),
-        };
-
         let (depth_write_enabled, label, blend);
         if key.contains(Mesh2dPipelineKey::BLEND_ALPHA) {
             label = "transparent_mesh2d_pipeline";
@@ -606,7 +659,7 @@ impl SpecializedMeshPipeline for Mesh2dPipeline {
                 shader: self.shader.clone(),
                 shader_defs,
                 targets: vec![Some(ColorTargetState {
-                    format,
+                    format: key.color_target_format(),
                     blend,
                     write_mask: ColorWrites::ALL,
                 })],

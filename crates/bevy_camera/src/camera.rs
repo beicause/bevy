@@ -334,13 +334,7 @@ pub enum ViewportConversionError {
 /// [`Camera3d`]: crate::Camera3d
 #[derive(Component, Debug, Reflect, Clone)]
 #[reflect(Component, Default, Debug, Clone)]
-#[require(
-    Frustum,
-    CameraMainTextureUsages,
-    VisibleEntities,
-    Transform,
-    Visibility
-)]
+#[require(Frustum, VisibleEntities, Transform, Visibility, RenderTarget)]
 pub struct Camera {
     /// If set, this camera will render to the given [`Viewport`] rectangle within the configured [`RenderTarget`].
     pub viewport: Option<Viewport>,

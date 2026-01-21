@@ -541,7 +541,7 @@ fn prepare_debug_overlay_pipelines(
             RenderDebugOverlayPipelineKey {
                 mode: config.mode,
                 view_layout_key,
-                texture_format: target.main_texture_format(),
+                texture_format: target.main_texture_view_format(),
             },
         );
 

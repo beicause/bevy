@@ -13,7 +13,8 @@ pub struct ColorAttachment {
     pub texture: CachedTexture,
     pub multisampled: Option<CachedTexture>,
     pub previous_frame_texture: Option<CachedTexture>,
-    color_view_attachment: ColorViewAttachment,
+    clear_color: Option<LinearRgba>,
+    is_first_call: Arc<AtomicBool>,
 }
 
 impl ColorAttachment {
@@ -21,56 +22,6 @@ impl ColorAttachment {
         texture: CachedTexture,
         multisampled: Option<CachedTexture>,
         previous_frame_texture: Option<CachedTexture>,
-        clear_color: Option<LinearRgba>,
-    ) -> Self {
-        let color_view_attachment = ColorViewAttachment::new(
-            texture.default_view.clone(),
-            multisampled.as_ref().map(|t| t.default_view.clone()),
-            previous_frame_texture
-                .as_ref()
-                .map(|t| t.default_view.clone()),
-            clear_color,
-        );
-        Self {
-            texture,
-            multisampled,
-            previous_frame_texture,
-            color_view_attachment,
-        }
-    }
-
-    /// Get this texture view as an attachment. The attachment will be cleared with a value of
-    /// `clear_color` if this is the first time calling this function, otherwise it will be loaded.
-    ///
-    /// The returned attachment will always have writing enabled (`store: StoreOp::Load`).
-    pub fn get_attachment(&self) -> RenderPassColorAttachment<'_> {
-        self.color_view_attachment.get_attachment()
-    }
-
-    /// Get this texture view as an attachment, without the resolve target. The attachment will be cleared with
-    /// a value of `clear_color` if this is the first time calling this function, otherwise it will be loaded.
-    ///
-    /// The returned attachment will always have writing enabled (`store: StoreOp::Load`).
-    pub fn get_unsampled_attachment(&self) -> RenderPassColorAttachment<'_> {
-        self.color_view_attachment.get_unsampled_attachment()
-    }
-}
-
-/// A wrapper for a [`TextureView`] that is used as a [`RenderPassColorAttachment`].
-#[derive(Clone)]
-pub struct ColorViewAttachment {
-    pub texture: TextureView,
-    pub multisampled: Option<TextureView>,
-    pub previous_frame_texture: Option<TextureView>,
-    pub clear_color: Option<LinearRgba>,
-    is_first_call: Arc<AtomicBool>,
-}
-
-impl ColorViewAttachment {
-    pub fn new(
-        texture: TextureView,
-        multisampled: Option<TextureView>,
-        previous_frame_texture: Option<TextureView>,
         clear_color: Option<LinearRgba>,
     ) -> Self {
         Self {
@@ -91,9 +42,9 @@ impl ColorViewAttachment {
             let first_call = self.is_first_call.fetch_and(false, Ordering::SeqCst);
 
             RenderPassColorAttachment {
-                view: &multisampled,
+                view: &multisampled.default_view,
                 depth_slice: None,
-                resolve_target: Some(&self.texture),
+                resolve_target: Some(&self.texture.default_view),
                 ops: Operations {
                     load: match (self.clear_color, first_call) {
                         (Some(clear_color), true) => LoadOp::Clear(clear_color.into()),
@@ -115,7 +66,7 @@ impl ColorViewAttachment {
         let first_call = self.is_first_call.fetch_and(false, Ordering::SeqCst);
 
         RenderPassColorAttachment {
-            view: &self.texture,
+            view: &self.texture.default_view,
             depth_slice: None,
             resolve_target: None,
             ops: Operations {

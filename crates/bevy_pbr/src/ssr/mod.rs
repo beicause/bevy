@@ -23,7 +23,6 @@ use bevy_ecs::{
     system::{lifetimeless::Read, Commands, Query, Res, ResMut},
     world::World,
 };
-use bevy_image::BevyDefault as _;
 use bevy_light::EnvironmentMapLight;
 use bevy_reflect::{std_traits::ReflectDefault, Reflect};
 use bevy_render::{
@@ -200,7 +199,7 @@ pub struct ViewScreenSpaceReflectionsUniformOffset(u32);
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScreenSpaceReflectionsPipelineKey {
     mesh_pipeline_view_key: MeshPipelineViewLayoutKey,
-    is_hdr: bool,
+    target_format: TextureFormat,
     has_environment_maps: bool,
     has_atmosphere: bool,
 }
@@ -460,7 +459,7 @@ pub fn prepare_ssr_pipelines(
     views: Query<
         (
             Entity,
-            &ExtractedView,
+            &ViewTarget,
             Has<RenderViewLightProbes<EnvironmentMapLight>>,
             Has<NormalPrepass>,
             Has<MotionVectorPrepass>,
@@ -475,7 +474,7 @@ pub fn prepare_ssr_pipelines(
 ) {
     for (
         entity,
-        extracted_view,
+        view_target,
         has_environment_maps,
         has_normal_prepass,
         has_motion_vector_prepass,
@@ -506,7 +505,7 @@ pub fn prepare_ssr_pipelines(
             &ssr_pipeline,
             ScreenSpaceReflectionsPipelineKey {
                 mesh_pipeline_view_key,
-                is_hdr: extracted_view.hdr,
+                target_format: view_target.main_texture_view_format(),
                 has_environment_maps,
                 has_atmosphere,
             },
@@ -611,11 +610,7 @@ impl SpecializedRenderPipeline for ScreenSpaceReflectionsPipeline {
                 shader: self.fragment_shader.clone(),
                 shader_defs,
                 targets: vec![Some(ColorTargetState {
-                    format: if key.is_hdr {
-                        ViewTarget::TEXTURE_FORMAT_HDR
-                    } else {
-                        TextureFormat::bevy_default()
-                    },
+                    format: key.target_format,
                     blend: None,
                     write_mask: ColorWrites::ALL,
                 })],

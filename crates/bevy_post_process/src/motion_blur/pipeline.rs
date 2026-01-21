@@ -7,7 +7,6 @@ use bevy_ecs::{
     resource::Resource,
     system::{Commands, Query, Res, ResMut},
 };
-use bevy_image::BevyDefault as _;
 use bevy_render::{
     globals::GlobalsUniform,
     render_resource::{
@@ -21,7 +20,7 @@ use bevy_render::{
         SpecializedRenderPipeline, SpecializedRenderPipelines, TextureFormat, TextureSampleType,
     },
     renderer::RenderDevice,
-    view::{ExtractedView, Msaa, ViewTarget},
+    view::{ Msaa, ViewTarget},
 };
 use bevy_shader::{Shader, ShaderDefVal};
 use bevy_utils::default;
@@ -110,7 +109,7 @@ pub fn init_motion_blur_pipeline(
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct MotionBlurPipelineKey {
-    hdr: bool,
+    target_format: TextureFormat,
     samples: u32,
 }
 
@@ -143,11 +142,7 @@ impl SpecializedRenderPipeline for MotionBlurPipeline {
                 shader: self.fragment_shader.clone(),
                 shader_defs,
                 targets: vec![Some(ColorTargetState {
-                    format: if key.hdr {
-                        ViewTarget::TEXTURE_FORMAT_HDR
-                    } else {
-                        TextureFormat::bevy_default()
-                    },
+                    format: key.target_format,
                     blend: None,
                     write_mask: ColorWrites::ALL,
                 })],
@@ -166,14 +161,14 @@ pub(crate) fn prepare_motion_blur_pipelines(
     pipeline_cache: Res<PipelineCache>,
     mut pipelines: ResMut<SpecializedRenderPipelines<MotionBlurPipeline>>,
     pipeline: Res<MotionBlurPipeline>,
-    views: Query<(Entity, &ExtractedView, &Msaa), With<MotionBlurUniform>>,
+    views: Query<(Entity, &ViewTarget, &Msaa), With<MotionBlurUniform>>,
 ) {
-    for (entity, view, msaa) in &views {
+    for (entity, view_target, msaa) in &views {
         let pipeline_id = pipelines.specialize(
             &pipeline_cache,
             &pipeline,
             MotionBlurPipelineKey {
-                hdr: view.hdr,
+                target_format: view_target.main_texture_view_format(),
                 samples: msaa.samples(),
             },
         );

@@ -28,7 +28,6 @@ use bevy_ecs::{
     system::{lifetimeless::Read, Commands, Query, Res, ResMut},
     world::World,
 };
-use bevy_image::BevyDefault as _;
 use bevy_math::ops;
 use bevy_reflect::{prelude::ReflectDefault, Reflect};
 use bevy_render::{
@@ -53,8 +52,8 @@ use bevy_render::{
     sync_world::RenderEntity,
     texture::{CachedTexture, TextureCache},
     view::{
-        prepare_view_targets, ExtractedView, Msaa, ViewDepthTexture, ViewTarget, ViewUniform,
-        ViewUniformOffset, ViewUniforms,
+        prepare_view_targets, Msaa, ViewDepthTexture, ViewTarget, ViewUniform, ViewUniformOffset,
+        ViewUniforms,
     },
     Extract, ExtractSchedule, Render, RenderApp, RenderStartup, RenderSystems,
 };
@@ -186,8 +185,7 @@ pub struct DepthOfFieldUniform {
 pub struct DepthOfFieldPipelineKey {
     /// Whether we're doing Gaussian or bokeh blur.
     pass: DofPass,
-    /// Whether we're using HDR.
-    hdr: bool,
+    target_format: TextureFormat,
     /// Whether the render target is multisampled.
     multisample: bool,
 }
@@ -653,7 +651,7 @@ pub fn prepare_auxiliary_depth_of_field_textures(
             mip_level_count: 1,
             sample_count: view_target.main_texture().sample_count(),
             dimension: TextureDimension::D2,
-            format: view_target.main_texture_format(),
+            format: view_target.main_texture_view_format(),
             usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
@@ -674,7 +672,7 @@ pub fn prepare_depth_of_field_pipelines(
     global_bind_group_layout: Res<DepthOfFieldGlobalBindGroupLayout>,
     view_targets: Query<(
         Entity,
-        &ExtractedView,
+        &ViewTarget,
         &DepthOfField,
         &ViewDepthOfFieldBindGroupLayouts,
         &Msaa,
@@ -682,7 +680,8 @@ pub fn prepare_depth_of_field_pipelines(
     fullscreen_shader: Res<FullscreenShader>,
     asset_server: Res<AssetServer>,
 ) {
-    for (entity, view, depth_of_field, view_bind_group_layouts, msaa) in view_targets.iter() {
+    for (entity, view_target, depth_of_field, view_bind_group_layouts, msaa) in view_targets.iter()
+    {
         let dof_pipeline = DepthOfFieldPipeline {
             view_bind_group_layouts: view_bind_group_layouts.clone(),
             global_bind_group_layout: global_bind_group_layout.layout.clone(),
@@ -690,8 +689,7 @@ pub fn prepare_depth_of_field_pipelines(
             fragment_shader: load_embedded_asset!(asset_server.as_ref(), "dof.wgsl"),
         };
 
-        // We'll need these two flags to create the `DepthOfFieldPipelineKey`s.
-        let (hdr, multisample) = (view.hdr, *msaa != Msaa::Off);
+        let multisample = *msaa != Msaa::Off;
 
         // Go ahead and specialize the pipelines.
         match depth_of_field.mode {
@@ -703,7 +701,7 @@ pub fn prepare_depth_of_field_pipelines(
                             &pipeline_cache,
                             &dof_pipeline,
                             DepthOfFieldPipelineKey {
-                                hdr,
+                                target_format: view_target.main_texture_view_format(),
                                 multisample,
                                 pass: DofPass::GaussianHorizontal,
                             },
@@ -712,7 +710,7 @@ pub fn prepare_depth_of_field_pipelines(
                             &pipeline_cache,
                             &dof_pipeline,
                             DepthOfFieldPipelineKey {
-                                hdr,
+                                target_format: view_target.main_texture_view_format(),
                                 multisample,
                                 pass: DofPass::GaussianVertical,
                             },
@@ -728,7 +726,7 @@ pub fn prepare_depth_of_field_pipelines(
                             &pipeline_cache,
                             &dof_pipeline,
                             DepthOfFieldPipelineKey {
-                                hdr,
+                                target_format: view_target.main_texture_view_format(),
                                 multisample,
                                 pass: DofPass::BokehPass0,
                             },
@@ -737,7 +735,7 @@ pub fn prepare_depth_of_field_pipelines(
                             &pipeline_cache,
                             &dof_pipeline,
                             DepthOfFieldPipelineKey {
-                                hdr,
+                                target_format: view_target.main_texture_view_format(),
                                 multisample,
                                 pass: DofPass::BokehPass1,
                             },
@@ -755,11 +753,7 @@ impl SpecializedRenderPipeline for DepthOfFieldPipeline {
         // Build up our pipeline layout.
         let (mut layout, mut shader_defs) = (vec![], vec![]);
         let mut targets = vec![Some(ColorTargetState {
-            format: if key.hdr {
-                ViewTarget::TEXTURE_FORMAT_HDR
-            } else {
-                TextureFormat::bevy_default()
-            },
+            format: key.target_format,
             blend: None,
             write_mask: ColorWrites::ALL,
         })];

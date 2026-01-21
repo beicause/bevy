@@ -16,7 +16,7 @@ use bevy_ecs::{
     system::{Commands, Query, Res, ResMut},
     world::World,
 };
-use bevy_image::{BevyDefault as _, ToExtents};
+use bevy_image::ToExtents;
 use bevy_math::vec2;
 use bevy_reflect::{std_traits::ReflectDefault, Reflect};
 use bevy_render::{
@@ -305,6 +305,7 @@ struct TaaPipelineSpecializer;
 
 #[derive(PartialEq, Eq, Hash, Clone, SpecializerKey)]
 struct TaaPipelineKey {
+    target_format: TextureFormat,
     hdr: bool,
     reset: bool,
 }
@@ -318,13 +319,10 @@ impl Specializer<RenderPipeline> for TaaPipelineSpecializer {
         descriptor: &mut RenderPipelineDescriptor,
     ) -> Result<Canonical<Self::Key>, BevyError> {
         let fragment = descriptor.fragment_mut()?;
-        let format = if key.hdr {
+        let format = key.target_format;
+        if key.hdr {
             fragment.shader_defs.push("TONEMAP".into());
-            ViewTarget::TEXTURE_FORMAT_HDR
-        } else {
-            TextureFormat::bevy_default()
-        };
-
+        }
         if key.reset {
             fragment.shader_defs.push("RESET".into());
         }
@@ -408,9 +406,9 @@ fn prepare_taa_history_textures(
     mut texture_cache: ResMut<TextureCache>,
     render_device: Res<RenderDevice>,
     frame_count: Res<FrameCount>,
-    views: Query<(Entity, &ExtractedCamera, &ExtractedView), With<TemporalAntiAliasing>>,
+    views: Query<(Entity, &ExtractedCamera, &ViewTarget), With<TemporalAntiAliasing>>,
 ) {
-    for (entity, camera, view) in &views {
+    for (entity, camera, view_target) in &views {
         if let Some(physical_viewport_size) = camera.physical_viewport_size {
             let mut texture_descriptor = TextureDescriptor {
                 label: None,
@@ -418,11 +416,7 @@ fn prepare_taa_history_textures(
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: TextureDimension::D2,
-                format: if view.hdr {
-                    ViewTarget::TEXTURE_FORMAT_HDR
-                } else {
-                    TextureFormat::bevy_default()
-                },
+                format: view_target.main_texture_view_format(),
                 usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,
                 view_formats: &[],
             };
@@ -457,11 +451,12 @@ fn prepare_taa_pipelines(
     mut commands: Commands,
     pipeline_cache: Res<PipelineCache>,
     mut pipeline: ResMut<TaaPipeline>,
-    views: Query<(Entity, &ExtractedView, &TemporalAntiAliasing)>,
+    views: Query<(Entity, &ExtractedView, &ViewTarget, &TemporalAntiAliasing)>,
 ) -> Result<(), BevyError> {
-    for (entity, view, taa_settings) in &views {
+    for (entity, view, view_target, taa_settings) in &views {
         let mut pipeline_key = TaaPipelineKey {
             hdr: view.hdr,
+            target_format: view_target.main_texture_view_format(),
             reset: taa_settings.reset,
         };
         let pipeline_id = pipeline

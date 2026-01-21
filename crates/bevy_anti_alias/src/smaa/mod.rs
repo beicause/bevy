@@ -48,7 +48,7 @@ use bevy_ecs::{
     system::{lifetimeless::Read, Commands, Query, Res, ResMut},
     world::World,
 };
-use bevy_image::{BevyDefault, Image, ToExtents};
+use bevy_image::{Image, ToExtents};
 use bevy_math::{vec4, Vec4};
 use bevy_reflect::{std_traits::ReflectDefault, Reflect};
 use bevy_render::{
@@ -174,7 +174,7 @@ struct SmaaNeighborhoodBlendingPipeline {
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct SmaaNeighborhoodBlendingPipelineKey {
     /// The format of the framebuffer.
-    texture_format: TextureFormat,
+    target_format: TextureFormat,
     /// The quality preset.
     preset: SmaaPreset,
 }
@@ -578,7 +578,7 @@ impl SpecializedRenderPipeline for SmaaNeighborhoodBlendingPipeline {
                 shader_defs,
                 entry_point: Some("neighborhood_blending_fragment_main".into()),
                 targets: vec![Some(ColorTargetState {
-                    format: key.texture_format,
+                    format: key.target_format,
                     blend: None,
                     write_mask: ColorWrites::ALL,
                 })],
@@ -595,9 +595,9 @@ fn prepare_smaa_pipelines(
     pipeline_cache: Res<PipelineCache>,
     mut specialized_render_pipelines: ResMut<SmaaSpecializedRenderPipelines>,
     smaa_pipelines: Res<SmaaPipelines>,
-    view_targets: Query<(Entity, &ExtractedView, &Smaa)>,
+    view_targets: Query<(Entity, &ViewTarget, &Smaa)>,
 ) {
-    for (entity, view, smaa) in &view_targets {
+    for (entity, view_target, smaa) in &view_targets {
         let edge_detection_pipeline_id = specialized_render_pipelines.edge_detection.specialize(
             &pipeline_cache,
             &smaa_pipelines.edge_detection,
@@ -618,11 +618,7 @@ fn prepare_smaa_pipelines(
                 &pipeline_cache,
                 &smaa_pipelines.neighborhood_blending,
                 SmaaNeighborhoodBlendingPipelineKey {
-                    texture_format: if view.hdr {
-                        ViewTarget::TEXTURE_FORMAT_HDR
-                    } else {
-                        TextureFormat::bevy_default()
-                    },
+                    target_format: view_target.main_texture_view_format(),
                     preset: smaa.preset,
                 },
             );

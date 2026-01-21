@@ -80,7 +80,7 @@ use bevy_render::{
     mesh::allocator::SlabId,
     render_phase::PhaseItemBatchSetKey,
     texture::CachedTexture,
-    view::{prepare_view_targets, NoIndirectDrawing, RetainedViewEntity},
+    view::{prepare_view_targets, NoIndirectDrawing, RetainedViewEntity, ViewTarget},
 };
 pub use main_opaque_pass_3d_node::*;
 pub use main_transparent_pass_3d_node::*;
@@ -89,7 +89,7 @@ use bevy_app::{App, Plugin, PostUpdate};
 use bevy_asset::UntypedAssetId;
 use bevy_color::LinearRgba;
 use bevy_ecs::prelude::*;
-use bevy_image::{BevyDefault, ToExtents};
+use bevy_image::ToExtents;
 use bevy_math::FloatOrd;
 use bevy_platform::collections::{HashMap, HashSet};
 use bevy_render::{
@@ -109,7 +109,7 @@ use bevy_render::{
     renderer::RenderDevice,
     sync_world::{MainEntity, RenderEntity},
     texture::{ColorAttachment, TextureCache},
-    view::{ExtractedView, ViewDepthTexture, ViewTarget},
+    view::{ExtractedView, ViewDepthTexture},
     Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
 };
 use nonmax::NonMaxU32;
@@ -884,10 +884,16 @@ pub fn prepare_core_3d_transmission_textures(
     alpha_mask_3d_phases: Res<ViewBinnedRenderPhases<AlphaMask3d>>,
     transmissive_3d_phases: Res<ViewSortedRenderPhases<Transmissive3d>>,
     transparent_3d_phases: Res<ViewSortedRenderPhases<Transparent3d>>,
-    views_3d: Query<(Entity, &ExtractedCamera, &Camera3d, &ExtractedView)>,
+    views_3d: Query<(
+        Entity,
+        &ExtractedCamera,
+        &Camera3d,
+        &ExtractedView,
+        &ViewTarget,
+    )>,
 ) {
     let mut textures = <HashMap<_, _>>::default();
-    for (entity, camera, camera_3d, view) in &views_3d {
+    for (entity, camera, camera_3d, view, view_target) in &views_3d {
         if !opaque_3d_phases.contains_key(&view.retained_view_entity)
             || !alpha_mask_3d_phases.contains_key(&view.retained_view_entity)
             || !transparent_3d_phases.contains_key(&view.retained_view_entity)
@@ -919,12 +925,6 @@ pub fn prepare_core_3d_transmission_textures(
             .or_insert_with(|| {
                 let usage = TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST;
 
-                let format = if view.hdr {
-                    ViewTarget::TEXTURE_FORMAT_HDR
-                } else {
-                    TextureFormat::bevy_default()
-                };
-
                 let descriptor = TextureDescriptor {
                     label: Some("view_transmission_texture"),
                     // The size of the transmission texture
@@ -932,7 +932,7 @@ pub fn prepare_core_3d_transmission_textures(
                     mip_level_count: 1,
                     sample_count: 1, // No need for MSAA, as we'll only copy the main texture here
                     dimension: TextureDimension::D2,
-                    format,
+                    format: view_target.main_texture_view_format(),
                     usage,
                     view_formats: &[],
                 };

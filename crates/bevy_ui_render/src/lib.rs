@@ -755,6 +755,7 @@ pub fn extract_ui_camera_view(
                 Entity,
                 RenderEntity,
                 &Camera,
+                &CameraMainTextureConfig,
                 Has<Hdr>,
                 Option<&UiAntiAlias>,
                 Option<&BoxShadowSamples>,
@@ -766,7 +767,16 @@ pub fn extract_ui_camera_view(
 ) {
     live_entities.clear();
 
-    for (main_entity, render_entity, camera, hdr, ui_anti_alias, shadow_samples) in &query {
+    for (
+        main_entity,
+        render_entity,
+        camera,
+        camera_main_texture_config,
+        hdr,
+        ui_anti_alias,
+        shadow_samples,
+    ) in &query
+    {
         // ignore inactive cameras
         if !camera.is_active {
             commands
@@ -802,7 +812,6 @@ pub fn extract_ui_camera_view(
                             UI_CAMERA_FAR + UI_CAMERA_TRANSFORM_OFFSET,
                         ),
                         clip_from_world: None,
-                        hdr,
                         viewport: UVec4::from((
                             physical_viewport_rect.min,
                             physical_viewport_rect.size(),
@@ -1417,7 +1426,7 @@ pub fn queue_uinodes(
             &pipeline_cache,
             &ui_pipeline,
             UiPipelineKey {
-                hdr: view.hdr,
+                target_format: view.target_format,
                 anti_alias: matches!(ui_anti_alias, None | Some(UiAntiAlias::On)),
             },
         );

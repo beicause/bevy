@@ -186,6 +186,7 @@ bitflags! {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TonemappingPipelineKey {
+    target_format: TextureFormat,
     deband_dither: DebandDither,
     tonemapping: Tonemapping,
     flags: TonemappingPipelineKeyFlags,
@@ -273,7 +274,7 @@ impl SpecializedRenderPipeline for TonemappingPipeline {
                 shader: self.fragment_shader.clone(),
                 shader_defs,
                 targets: vec![Some(ColorTargetState {
-                    format: ViewTarget::TEXTURE_FORMAT_HDR,
+                    format: key.target_format,
                     blend: None,
                     write_mask: ColorWrites::ALL,
                 })],
@@ -325,17 +326,15 @@ pub fn prepare_view_tonemapping_pipelines(
     pipeline_cache: Res<PipelineCache>,
     mut pipelines: ResMut<SpecializedRenderPipelines<TonemappingPipeline>>,
     upscaling_pipeline: Res<TonemappingPipeline>,
-    view_targets: Query<
-        (
-            Entity,
-            &ExtractedView,
-            Option<&Tonemapping>,
-            Option<&DebandDither>,
-        ),
-        With<ViewTarget>,
-    >,
+    view_targets: Query<(
+        Entity,
+        &ExtractedView,
+        &ViewTarget,
+        Option<&Tonemapping>,
+        Option<&DebandDither>,
+    )>,
 ) {
-    for (entity, view, tonemapping, dither) in view_targets.iter() {
+    for (entity, view, view_target, tonemapping, dither) in view_targets.iter() {
         // As an optimization, we omit parts of the shader that are unneeded.
         let mut flags = TonemappingPipelineKeyFlags::empty();
         flags.set(
@@ -357,6 +356,7 @@ pub fn prepare_view_tonemapping_pipelines(
             deband_dither: *dither.unwrap_or(&DebandDither::Disabled),
             tonemapping: *tonemapping.unwrap_or(&Tonemapping::None),
             flags,
+            target_format: view_target.main_texture_view_format(),
         };
         let pipeline = pipelines.specialize(&pipeline_cache, &upscaling_pipeline, key);
 

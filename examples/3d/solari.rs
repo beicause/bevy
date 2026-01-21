@@ -145,8 +145,11 @@ fn setup_pica_pica(
         Transform::from_translation(Vec3::new(0.219417, 2.5764852, 6.9718704)).with_rotation(
             Quat::from_xyzw(-0.1466768, 0.013738206, 0.002037309, 0.989087),
         ),
-        // Msaa::Off and CameraMainTextureUsages with STORAGE_BINDING are required for Solari
-        CameraMainTextureUsages::default().with(TextureUsages::STORAGE_BINDING),
+        // Msaa::Off and main texture usages with STORAGE_BINDING are required for Solari
+        CameraMainTextureConfig {
+            usage: CameraMainTextureConfig::default().usage | TextureUsages::STORAGE_BINDING,
+            ..Default::default()
+        },
         Msaa::Off,
     ));
 

@@ -17,7 +17,7 @@ use bevy_ecs::{
     system::{lifetimeless::Read, Commands, Local, Query, Res, ResMut},
     world::World,
 };
-use bevy_image::{BevyDefault, Image};
+use bevy_image::Image;
 use bevy_light::{FogVolume, VolumetricFog, VolumetricLight};
 use bevy_math::{vec4, Affine3A, Mat4, Vec3, Vec3A, Vec4};
 use bevy_mesh::{Mesh, MeshVertexBufferLayoutRef};
@@ -143,6 +143,8 @@ pub struct VolumetricFogPipelineKey {
 
     /// Flags that specify features on the pipeline key.
     flags: VolumetricFogPipelineKeyFlags,
+
+    target_format: TextureFormat,
 }
 
 /// The same as [`VolumetricFog`] and [`FogVolume`], but formatted for
@@ -591,11 +593,7 @@ impl SpecializedRenderPipeline for VolumetricFogPipeline {
                 shader: self.shader.clone(),
                 shader_defs,
                 targets: vec![Some(ColorTargetState {
-                    format: if key.flags.contains(VolumetricFogPipelineKeyFlags::HDR) {
-                        ViewTarget::TEXTURE_FORMAT_HDR
-                    } else {
-                        TextureFormat::bevy_default()
-                    },
+                    format: key.target_format,
                     // Blend on top of what's already in the framebuffer. Doing
                     // the alpha blending with the hardware blender allows us to
                     // avoid having to use intermediate render targets.
@@ -631,6 +629,7 @@ pub fn prepare_volumetric_fog_pipelines(
         (
             Entity,
             &ExtractedView,
+            &ViewTarget,
             &Msaa,
             Has<NormalPrepass>,
             Has<DepthPrepass>,
@@ -650,6 +649,7 @@ pub fn prepare_volumetric_fog_pipelines(
     for (
         entity,
         view,
+        view_target,
         msaa,
         normal_prepass,
         depth_prepass,
@@ -683,6 +683,7 @@ pub fn prepare_volumetric_fog_pipelines(
             mesh_pipeline_view_key,
             vertex_buffer_layout: plane_mesh.layout.clone(),
             flags: textureless_flags,
+            target_format: view_target.main_texture_view_format(),
         };
         let textureless_pipeline_id = pipelines.specialize(
             &pipeline_cache,
