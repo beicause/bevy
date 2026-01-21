@@ -302,7 +302,7 @@ pub fn queue_shadows(
     mut pipelines: ResMut<SpecializedRenderPipelines<BoxShadowPipeline>>,
     mut transparent_render_phases: ResMut<ViewSortedRenderPhases<TransparentUi>>,
     mut render_views: Query<(&UiCameraView, Option<&BoxShadowSamples>), With<ExtractedView>>,
-    camera_views: Query<&ExtractedView>,
+    camera_views: Query<(&ExtractedView, &ViewTarget)>,
     pipeline_cache: Res<PipelineCache>,
     draw_functions: Res<DrawFunctions<TransparentUi>>,
 ) {
@@ -315,7 +315,7 @@ pub fn queue_shadows(
             continue;
         };
 
-        let Ok(view) = camera_views.get(default_camera_view.0) else {
+        let Ok((view, view_target)) = camera_views.get(default_camera_view.0) else {
             continue;
         };
 
@@ -328,7 +328,7 @@ pub fn queue_shadows(
             &pipeline_cache,
             &box_shadow_pipeline,
             BoxShadowPipelineKey {
-                target_format: view.target_format,
+                target_format: view_target.main_texture_view_format(),
                 samples: shadow_samples.copied().unwrap_or_default().0,
             },
         );

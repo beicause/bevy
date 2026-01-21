@@ -500,10 +500,10 @@ fn queue_custom_meshes(
     render_meshes: Res<RenderAssets<RenderMesh>>,
     render_mesh_instances: Res<RenderMeshInstances>,
     mut custom_render_phases: ResMut<ViewSortedRenderPhases<Stencil3d>>,
-    mut views: Query<(&ExtractedView, &RenderVisibleEntities, &Msaa)>,
+    mut views: Query<(&ExtractedView, &RenderVisibleEntities, &ViewTarget)>,
     has_marker: Query<(), With<DrawStencil>>,
 ) {
-    for (view, visible_entities, msaa) in &mut views {
+    for (view, visible_entities, view_target) in &mut views {
         let Some(custom_phase) = custom_render_phases.get_mut(&view.retained_view_entity) else {
             continue;
         };
@@ -511,8 +511,8 @@ fn queue_custom_meshes(
 
         // Create the key based on the view.
         // In this case we only care about MSAA and HDR
-        let view_key = MeshPipelineKey::from_msaa_samples(msaa.samples())
-            | MeshPipelineKey::from_color_target_format(view.target_format);
+        let view_key = MeshPipelineKey::from_msaa_samples(view_target.msaa_samples())
+            | MeshPipelineKey::from_color_target_format(view_target.main_texture_view_format());
 
         let rangefinder = view.rangefinder3d();
         // Since our phase can work on any 3d mesh we can reuse the default mesh 3d filter

@@ -85,7 +85,6 @@ use bevy_core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy_ecs::change_detection::Tick;
 use bevy_ecs::system::SystemChangeTick;
 use bevy_render::camera::TemporalJitter;
-use bevy_render::prelude::Msaa;
 use bevy_render::sync_world::{MainEntity, MainEntityHashMap};
 use bevy_render::view::{ExtractedView, ViewTarget};
 use bevy_render::RenderSystems::PrepareAssets;
@@ -312,7 +311,7 @@ pub fn check_views_need_specialization(
     mut view_key_cache: ResMut<ViewKeyCache>,
     mut view_specialization_ticks: ResMut<ViewSpecializationTicks>,
     mut views: Query<(
-        (&ExtractedView, &ViewTarget, &Msaa),
+        (&ExtractedView, &ViewTarget),
         Option<&Tonemapping>,
         Option<&DebandDither>,
         Option<&ShadowFilteringMethod>,
@@ -338,7 +337,7 @@ pub fn check_views_need_specialization(
     ticks: SystemChangeTick,
 ) {
     for (
-        (view, view_target, msaa),
+        (view, view_target),
         tonemapping,
         dither,
         shadow_filter_method,
@@ -354,7 +353,7 @@ pub fn check_views_need_specialization(
         has_ssr,
     ) in views.iter_mut()
     {
-        let mut view_key = MeshPipelineKey::from_msaa_samples(msaa.samples())
+        let mut view_key = MeshPipelineKey::from_msaa_samples(view_target.msaa_samples())
             | MeshPipelineKey::from_color_target_format(view_target.main_texture_view_format());
 
         if normal_prepass {

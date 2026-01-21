@@ -21,7 +21,6 @@ use bevy_ecs::{
     schedule::IntoScheduleConfigs,
     system::{Commands, Query, Res, ResMut},
 };
-use bevy_image::BevyDefault as _;
 use bevy_pbr::{ExtractedAtmosphere, MeshPipeline, MeshPipelineKey, SetMeshViewBindGroup};
 use bevy_render::{
     render_asset::{prepare_assets, RenderAssets},
@@ -30,7 +29,7 @@ use bevy_render::{
         ViewSortedRenderPhases,
     },
     render_resource::*,
-    view::{ExtractedView, Msaa},
+    view::{ExtractedView, ViewTarget},
     Render, RenderApp, RenderSystems,
 };
 use bevy_render::{sync_world::MainEntity, RenderStartup};
@@ -156,12 +155,6 @@ impl Specializer<RenderPipeline> for LineGizmoPipelineSpecializer {
             fragment.shader_defs.push("PERSPECTIVE".into());
         }
 
-        let view_layout = self
-            .mesh_pipeline
-            .get_view_layout(key.view_key.into())
-            .clone();
-        let layout = vec![view_layout.main_layout.clone(), self.uniform_layout.clone()];
-
         let fragment_entry_point = match key.line_style {
             GizmoLineStyle::Solid => "fragment_solid",
             GizmoLineStyle::Dotted => "fragment_dotted",
@@ -174,7 +167,7 @@ impl Specializer<RenderPipeline> for LineGizmoPipelineSpecializer {
         fragment.set_target(
             0,
             ColorTargetState {
-                format,
+                format: key.view_key.color_target_format(),
                 blend: Some(BlendState::ALPHA_BLENDING),
                 write_mask: ColorWrites::ALL,
             },
@@ -291,7 +284,7 @@ fn queue_line_gizmos_3d(
     mut transparent_render_phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
     views: Query<(
         &ExtractedView,
-        &Msaa,
+        &ViewTarget,
         Option<&RenderLayers>,
         (
             Has<NormalPrepass>,
@@ -311,7 +304,7 @@ fn queue_line_gizmos_3d(
 
     for (
         view,
-        msaa,
+        view_target,
         render_layers,
         (normal_prepass, depth_prepass, motion_vector_prepass, deferred_prepass, oit, atmosphere),
     ) in &views
@@ -323,8 +316,8 @@ fn queue_line_gizmos_3d(
 
         let render_layers = render_layers.unwrap_or_default();
 
-        let mut view_key = MeshPipelineKey::from_msaa_samples(msaa.samples())
-            | MeshPipelineKey::from_color_target_format(view.target_format);
+        let mut view_key = MeshPipelineKey::from_msaa_samples(view_target.msaa_samples())
+            | MeshPipelineKey::from_color_target_format(view_target.main_texture_view_format());
 
         if normal_prepass {
             view_key |= MeshPipelineKey::NORMAL_PREPASS;
@@ -416,7 +409,7 @@ fn queue_line_joint_gizmos_3d(
     mut transparent_render_phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
     views: Query<(
         &ExtractedView,
-        &Msaa,
+        &ViewTarget,
         Option<&RenderLayers>,
         (
             Has<NormalPrepass>,
@@ -433,7 +426,7 @@ fn queue_line_joint_gizmos_3d(
 
     for (
         view,
-        msaa,
+        view_target,
         render_layers,
         (normal_prepass, depth_prepass, motion_vector_prepass, deferred_prepass),
     ) in &views
@@ -445,8 +438,8 @@ fn queue_line_joint_gizmos_3d(
 
         let render_layers = render_layers.unwrap_or_default();
 
-        let mut view_key = MeshPipelineKey::from_msaa_samples(msaa.samples())
-            | MeshPipelineKey::from_color_target_format(view.target_format);
+        let mut view_key = MeshPipelineKey::from_msaa_samples(view_target.msaa_samples())
+            | MeshPipelineKey::from_color_target_format(view_target.main_texture_view_format());
 
         if normal_prepass {
             view_key |= MeshPipelineKey::NORMAL_PREPASS;

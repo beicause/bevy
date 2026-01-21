@@ -24,7 +24,7 @@ use bevy_render::{
     },
     renderer::RenderDevice,
     texture::GpuImage,
-    view::{Msaa, ViewTarget, ViewUniform, ViewUniforms},
+    view::{ViewTarget, ViewUniform, ViewUniforms},
     Render, RenderApp, RenderStartup, RenderSystems,
 };
 use bevy_shader::Shader;
@@ -241,15 +241,15 @@ fn prepare_skybox_pipelines(
     pipeline_cache: Res<PipelineCache>,
     mut pipelines: ResMut<SpecializedRenderPipelines<SkyboxPipeline>>,
     pipeline: Res<SkyboxPipeline>,
-    views: Query<(Entity, &ViewTarget, &Msaa), With<Skybox>>,
+    views: Query<(Entity, &ViewTarget), With<Skybox>>,
 ) {
-    for (entity, view_target, msaa) in &views {
+    for (entity, view_target) in &views {
         let pipeline_id = pipelines.specialize(
             &pipeline_cache,
             &pipeline,
             SkyboxPipelineKey {
                 target_format: view_target.main_texture_view_format(),
-                samples: msaa.samples(),
+                samples: view_target.msaa_samples(),
                 depth_format: CORE_3D_DEPTH_FORMAT,
             },
         );

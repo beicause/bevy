@@ -52,7 +52,7 @@ use bevy_render::{
     sync_world::RenderEntity,
     texture::{CachedTexture, TextureCache},
     view::{
-        prepare_view_targets, Msaa, ViewDepthTexture, ViewTarget, ViewUniform, ViewUniformOffset,
+        prepare_view_targets, ViewDepthTexture, ViewTarget, ViewUniform, ViewUniformOffset,
         ViewUniforms,
     },
     Extract, ExtractSchedule, Render, RenderApp, RenderStartup, RenderSystems,
@@ -539,9 +539,9 @@ pub fn init_dof_global_bind_group_layout(mut commands: Commands, render_device: 
 /// specific to each view.
 pub fn prepare_depth_of_field_view_bind_group_layouts(
     mut commands: Commands,
-    view_targets: Query<(Entity, &DepthOfField, &Msaa)>,
+    view_targets: Query<(Entity, &DepthOfField, &ViewTarget)>,
 ) {
-    for (view, depth_of_field, msaa) in view_targets.iter() {
+    for (view, depth_of_field, view_target) in view_targets.iter() {
         // Create the bind group layout for the passes that take one input.
         let single_input = BindGroupLayoutDescriptor::new(
             "depth of field bind group layout (single input)",
@@ -549,7 +549,7 @@ pub fn prepare_depth_of_field_view_bind_group_layouts(
                 ShaderStages::FRAGMENT,
                 (
                     uniform_buffer::<ViewUniform>(true),
-                    if *msaa != Msaa::Off {
+                    if view_target.msaa_samples() > 1 {
                         texture_depth_2d_multisampled()
                     } else {
                         texture_depth_2d()
@@ -569,7 +569,7 @@ pub fn prepare_depth_of_field_view_bind_group_layouts(
                     ShaderStages::FRAGMENT,
                     (
                         uniform_buffer::<ViewUniform>(true),
-                        if *msaa != Msaa::Off {
+                        if view_target.msaa_samples() > 1 {
                             texture_depth_2d_multisampled()
                         } else {
                             texture_depth_2d()
@@ -675,13 +675,11 @@ pub fn prepare_depth_of_field_pipelines(
         &ViewTarget,
         &DepthOfField,
         &ViewDepthOfFieldBindGroupLayouts,
-        &Msaa,
     )>,
     fullscreen_shader: Res<FullscreenShader>,
     asset_server: Res<AssetServer>,
 ) {
-    for (entity, view_target, depth_of_field, view_bind_group_layouts, msaa) in view_targets.iter()
-    {
+    for (entity, view_target, depth_of_field, view_bind_group_layouts) in view_targets.iter() {
         let dof_pipeline = DepthOfFieldPipeline {
             view_bind_group_layouts: view_bind_group_layouts.clone(),
             global_bind_group_layout: global_bind_group_layout.layout.clone(),
@@ -689,7 +687,7 @@ pub fn prepare_depth_of_field_pipelines(
             fragment_shader: load_embedded_asset!(asset_server.as_ref(), "dof.wgsl"),
         };
 
-        let multisample = *msaa != Msaa::Off;
+        let multisample = view_target.msaa_samples() > 1;
 
         // Go ahead and specialize the pipelines.
         match depth_of_field.mode {

@@ -580,7 +580,7 @@ pub fn queue_gradient(
     mut pipelines: ResMut<SpecializedRenderPipelines<GradientPipeline>>,
     mut transparent_render_phases: ResMut<ViewSortedRenderPhases<TransparentUi>>,
     mut render_views: Query<(&UiCameraView, Option<&UiAntiAlias>), With<ExtractedView>>,
-    camera_views: Query<&ExtractedView>,
+    camera_views: Query<(&ExtractedView, &ViewTarget)>,
     pipeline_cache: Res<PipelineCache>,
     draw_functions: Res<DrawFunctions<TransparentUi>>,
 ) {
@@ -592,7 +592,7 @@ pub fn queue_gradient(
             continue;
         };
 
-        let Ok(view) = camera_views.get(default_camera_view.0) else {
+        let Ok((view, view_target)) = camera_views.get(default_camera_view.0) else {
             continue;
         };
 
@@ -607,7 +607,7 @@ pub fn queue_gradient(
             UiGradientPipelineKey {
                 anti_alias: matches!(ui_anti_alias, None | Some(UiAntiAlias::On)),
                 color_space: gradient.color_space,
-                target_format: view.target_format,
+                target_format: view_target.main_texture_view_format(),
             },
         );
 

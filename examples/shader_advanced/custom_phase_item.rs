@@ -38,6 +38,7 @@ use bevy::{
         Render, RenderApp, RenderSystems,
     },
 };
+use bevy_render::view::ViewTarget;
 use bytemuck::{Pod, Zeroable};
 
 /// A marker component that represents an entity that is to be rendered using
@@ -216,7 +217,7 @@ fn queue_custom_phase_item(
     mut pipeline: ResMut<CustomPhasePipeline>,
     mut opaque_render_phases: ResMut<ViewBinnedRenderPhases<Opaque3d>>,
     opaque_draw_functions: Res<DrawFunctions<Opaque3d>>,
-    views: Query<(&ExtractedView, &RenderVisibleEntities, &Msaa)>,
+    views: Query<(&ExtractedView, &RenderVisibleEntities, &ViewTarget)>,
     mut next_tick: Local<Tick>,
 ) {
     let draw_custom_phase_item = opaque_draw_functions
@@ -226,7 +227,7 @@ fn queue_custom_phase_item(
     // Render phases are per-view, so we need to iterate over all views so that
     // the entity appears in them. (In this example, we have only one view, but
     // it's good practice to loop over all views anyway.)
-    for (view, view_visible_entities, msaa) in views.iter() {
+    for (view, view_visible_entities, view_target) in views.iter() {
         let Some(opaque_phase) = opaque_render_phases.get_mut(&view.retained_view_entity) else {
             continue;
         };
@@ -240,7 +241,7 @@ fn queue_custom_phase_item(
             // with the exception of number of MSAA samples.
             let Ok(pipeline_id) = pipeline
                 .variants
-                .specialize(&pipeline_cache, CustomPhaseKey(*msaa))
+                .specialize(&pipeline_cache, CustomPhaseKey(view_target.msaa_samples()))
             else {
                 continue;
             };
@@ -345,7 +346,7 @@ impl FromWorld for CustomPhasePipeline {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, SpecializerKey)]
-struct CustomPhaseKey(Msaa);
+struct CustomPhaseKey(u32);
 
 impl Specializer<RenderPipeline> for CustomPhaseSpecializer {
     type Key = CustomPhaseKey;
@@ -355,7 +356,7 @@ impl Specializer<RenderPipeline> for CustomPhaseSpecializer {
         key: Self::Key,
         descriptor: &mut RenderPipelineDescriptor,
     ) -> Result<Canonical<Self::Key>, BevyError> {
-        descriptor.multisample.count = key.0.samples();
+        descriptor.multisample.count = key.0;
         Ok(key)
     }
 }

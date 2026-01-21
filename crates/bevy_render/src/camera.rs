@@ -54,8 +54,7 @@ pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.register_required_components::<Camera, Msaa>()
-            .register_required_components::<Camera, SyncToRenderWorld>()
+        app.register_required_components::<Camera, SyncToRenderWorld>()
             .register_required_components::<Camera3d, ColorGrading>()
             .register_required_components::<Camera3d, Exposure>()
             .add_plugins((
@@ -106,12 +105,15 @@ impl Plugin for CameraPlugin {
 fn insert_camera_components_if_auto_configured(
     mut commands: Commands,
     query: Query<
-        (Entity, Has<CameraMainTextureUsages>),
+        (Entity, Has<Msaa>, Has<CameraMainTextureUsages>),
         (With<Camera>, Without<NoAutoConfiguredColorTarget>),
     >,
 ) {
-    for (entity, has_texture_usages) in query.iter() {
+    for (entity, has_msaa, has_texture_usages) in query.iter() {
         let mut entity_commands = commands.entity(entity);
+        if !has_msaa {
+            entity_commands.insert(Msaa::default());
+        }
         if !has_texture_usages {
             entity_commands.insert(CameraMainTextureUsages::default());
         }
@@ -150,12 +152,14 @@ fn configure_camera_color_target(
         let image_texture_a = Image {
             texture_descriptor: image_desc.clone(),
             copy_on_resize: false,
+            data: None,
             ..Default::default()
         };
         image_desc.label = Some("main_texture_b");
         let image_texture_b = Image {
             texture_descriptor: image_desc.clone(),
             copy_on_resize: false,
+            data: None,
             ..Default::default()
         };
 
@@ -165,6 +169,7 @@ fn configure_camera_color_target(
             let image_texture_multisampled = Image {
                 texture_descriptor: image_desc,
                 copy_on_resize: false,
+                data: None,
                 ..Default::default()
             };
             Some(image_assets.add(image_texture_multisampled))

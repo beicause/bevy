@@ -23,7 +23,7 @@ use bevy_render::{
         ViewSortedRenderPhases,
     },
     render_resource::*,
-    view::{ExtractedView, Msaa},
+    view::{ExtractedView, ViewTarget},
     Render, RenderApp, RenderSystems,
 };
 use bevy_render::{sync_world::MainEntity, RenderStartup};
@@ -284,7 +284,7 @@ fn queue_line_and_joint_gizmos_2d(
     line_gizmos: Query<(Entity, &MainEntity, &GizmoMeshConfig)>,
     line_gizmo_assets: Res<RenderAssets<GpuLineGizmo>>,
     mut transparent_render_phases: ResMut<ViewSortedRenderPhases<Transparent2d>>,
-    mut views: Query<(&ExtractedView, &Msaa, Option<&RenderLayers>)>,
+    mut views: Query<(&ExtractedView, &ViewTarget, Option<&RenderLayers>)>,
 ) {
     let draw_function = draw_functions.read().get_id::<DrawLineGizmo2d>().unwrap();
     let draw_line_function_strip = draw_functions
@@ -296,14 +296,14 @@ fn queue_line_and_joint_gizmos_2d(
         .get_id::<DrawLineJointGizmo2d>()
         .unwrap();
 
-    for (view, msaa, render_layers) in &mut views {
+    for (view, view_target, render_layers) in &mut views {
         let Some(transparent_phase) = transparent_render_phases.get_mut(&view.retained_view_entity)
         else {
             continue;
         };
 
-        let mesh_key = Mesh2dPipelineKey::from_msaa_samples(msaa.samples())
-            | Mesh2dPipelineKey::from_color_target_format(view.target_format);
+        let mesh_key = Mesh2dPipelineKey::from_msaa_samples(view_target.msaa_samples())
+            | Mesh2dPipelineKey::from_color_target_format(view_target.main_texture_view_format());
 
         let render_layers = render_layers.unwrap_or_default();
         for (entity, main_entity, config) in &line_gizmos {

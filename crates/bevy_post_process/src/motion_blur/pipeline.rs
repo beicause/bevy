@@ -20,7 +20,7 @@ use bevy_render::{
         SpecializedRenderPipeline, SpecializedRenderPipelines, TextureFormat, TextureSampleType,
     },
     renderer::RenderDevice,
-    view::{ Msaa, ViewTarget},
+    view::ViewTarget,
 };
 use bevy_shader::{Shader, ShaderDefVal};
 use bevy_utils::default;
@@ -161,15 +161,15 @@ pub(crate) fn prepare_motion_blur_pipelines(
     pipeline_cache: Res<PipelineCache>,
     mut pipelines: ResMut<SpecializedRenderPipelines<MotionBlurPipeline>>,
     pipeline: Res<MotionBlurPipeline>,
-    views: Query<(Entity, &ViewTarget, &Msaa), With<MotionBlurUniform>>,
+    views: Query<(Entity, &ViewTarget), With<MotionBlurUniform>>,
 ) {
-    for (entity, view_target, msaa) in &views {
+    for (entity, view_target) in &views {
         let pipeline_id = pipelines.specialize(
             &pipeline_cache,
             &pipeline,
             MotionBlurPipelineKey {
                 target_format: view_target.main_texture_view_format(),
-                samples: msaa.samples(),
+                samples: view_target.msaa_samples(),
             },
         );
 

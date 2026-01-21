@@ -2,7 +2,6 @@
 
 use std::{f32::consts::PI, fmt::Write};
 
-#[cfg(any(not(feature = "dlss"), feature = "force_disable_dlss"))]
 use bevy::{
     anti_alias::{
         contrast_adaptive_sharpening::ContrastAdaptiveSharpening,
@@ -11,7 +10,6 @@ use bevy::{
         taa::TemporalAntiAliasing,
     },
     asset::RenderAssetUsages,
-    camera::CameraMainTextureSize,
     core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
     image::{ImageSampler, ImageSamplerDescriptor},
     light::CascadeShadowConfigBuilder,
@@ -40,13 +38,7 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (
-                modify_aa,
-                modify_sharpening,
-                modify_resolution,
-                modify_projection,
-                update_ui,
-            ),
+            (modify_aa, modify_sharpening, modify_projection, update_ui),
         );
 
     app.run();
@@ -70,12 +62,6 @@ type DlssComponents = (
 );
 #[cfg(any(not(feature = "dlss"), feature = "force_disable_dlss"))]
 type DlssComponents = ();
-
-#[derive(Component)]
-struct MainResolution {
-    enabled: bool,
-    factor: f32,
-}
 
 fn modify_aa(
     keys: Res<ButtonInput<KeyCode>>,
@@ -274,40 +260,6 @@ fn modify_sharpening(
     }
 }
 
-fn modify_resolution(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut query: Query<(&mut MainResolution, &mut CameraMainTextureSize)>,
-) {
-    for (mut resolution, mut config) in &mut query {
-        let CameraMainTextureSize::Factor(f) = config.as_mut() else {
-            unreachable!()
-        };
-        if keys.just_pressed(KeyCode::Digit9) {
-            resolution.enabled = !resolution.enabled;
-            if resolution.enabled {
-                *f = Vec2::splat(resolution.factor);
-            } else {
-                *f = Vec2::splat(1.0);
-            }
-        }
-
-        if resolution.enabled {
-            if keys.just_pressed(KeyCode::KeyF) {
-                resolution.factor -= 0.1;
-                resolution.factor = resolution.factor.clamp(0.1, 4.0);
-                *f = Vec2::splat(resolution.factor);
-            }
-            if keys.just_pressed(KeyCode::KeyG) {
-                resolution.factor += 0.1;
-                resolution.factor = resolution.factor.clamp(0.1, 4.0);
-                *f = Vec2::splat(resolution.factor);
-            }
-        } else {
-            *f = Vec2::splat(1.0);
-        }
-    }
-}
-
 fn modify_projection(keys: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Projection>) {
     for mut projection in &mut query {
         if keys.just_pressed(KeyCode::KeyO) {
@@ -335,7 +287,6 @@ fn update_ui(
             Option<&TemporalAntiAliasing>,
             &ContrastAdaptiveSharpening,
             &Msaa,
-            &MainResolution,
             Option<&Dlss>,
         ),
         With<Camera>,
@@ -348,7 +299,6 @@ fn update_ui(
             Option<&TemporalAntiAliasing>,
             &ContrastAdaptiveSharpening,
             &Msaa,
-            &MainResolution,
         ),
         With<Camera>,
     >,
@@ -358,9 +308,9 @@ fn update_ui(
     >,
 ) {
     #[cfg(all(feature = "dlss", not(feature = "force_disable_dlss")))]
-    let (projection, fxaa, smaa, taa, cas, msaa, resolution, dlss) = *camera;
+    let (projection, fxaa, smaa, taa, cas, msaa, dlss) = *camera;
     #[cfg(any(not(feature = "dlss"), feature = "force_disable_dlss"))]
-    let (projection, fxaa, smaa, taa, cas, msaa, resolution) = *camera;
+    let (projection, fxaa, smaa, taa, cas, msaa) = *camera;
 
     let ui = &mut ui.0;
     *ui = "Antialias Method\n".to_string();
@@ -450,12 +400,6 @@ fn update_ui(
     }
 
     ui.push_str("\n----------\n\n");
-    draw_selectable_menu_item(ui, "Main resolution", '9', resolution.enabled);
-    if resolution.enabled {
-        ui.push_str(&format!("(F/G) Factor: {:.1}\n", resolution.factor));
-    }
-
-    ui.push_str("\n----------\n\n");
     draw_selectable_menu_item(
         ui,
         "Orthographic",
@@ -536,11 +480,6 @@ fn setup(
             },
             ..default()
         },
-        MainResolution {
-            enabled: false,
-            factor: 2.0,
-        },
-        CameraMainTextureSize::Factor(Vec2::ONE),
     ));
 
     // example instructions

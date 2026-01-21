@@ -146,10 +146,7 @@ fn setup_pica_pica(
             Quat::from_xyzw(-0.1466768, 0.013738206, 0.002037309, 0.989087),
         ),
         // Msaa::Off and main texture usages with STORAGE_BINDING are required for Solari
-        CameraMainTextureConfig {
-            usage: CameraMainTextureConfig::default().usage | TextureUsages::STORAGE_BINDING,
-            ..Default::default()
-        },
+        CameraMainTextureUsages::default().with(TextureUsages::STORAGE_BINDING),
         Msaa::Off,
     ));
 

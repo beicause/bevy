@@ -801,11 +801,11 @@ pub fn prepare_core_3d_depth_textures(
         &ExtractedView,
         Option<&DepthPrepass>,
         &Camera3d,
-        &Msaa,
+        &ViewTarget,
     )>,
 ) {
     let mut render_target_usage = <HashMap<_, _>>::default();
-    for (_, camera, extracted_view, depth_prepass, camera_3d, _msaa) in &views_3d {
+    for (_, camera, extracted_view, depth_prepass, camera_3d, _) in &views_3d {
         if !opaque_3d_phases.contains_key(&extracted_view.retained_view_entity)
             || !alpha_mask_3d_phases.contains_key(&extracted_view.retained_view_entity)
             || !transmissive_3d_phases.contains_key(&extracted_view.retained_view_entity)
@@ -827,7 +827,7 @@ pub fn prepare_core_3d_depth_textures(
     }
 
     let mut textures = <HashMap<_, _>>::default();
-    for (entity, camera, _, _, camera_3d, msaa) in &views_3d {
+    for (entity, camera, _, _, camera_3d, view_target) in &views_3d {
         let Some(physical_viewport_size) = camera.physical_viewport_size else {
             continue;
         };
@@ -840,7 +840,7 @@ pub fn prepare_core_3d_depth_textures(
                 camera.output_color_target.clone(),
                 physical_viewport_size,
                 usage,
-                msaa,
+                view_target.msaa_samples(),
             ))
             .or_insert_with(|| {
                 let descriptor = TextureDescriptor {
@@ -848,7 +848,7 @@ pub fn prepare_core_3d_depth_textures(
                     // The size of the depth texture
                     size: physical_viewport_size.to_extents(),
                     mip_level_count: 1,
-                    sample_count: msaa.samples(),
+                    sample_count: view_target.msaa_samples(),
                     dimension: TextureDimension::D2,
                     format: CORE_3D_DEPTH_FORMAT,
                     usage,
@@ -1004,7 +1004,7 @@ pub fn prepare_prepass_textures(
         Entity,
         &ExtractedCamera,
         &ExtractedView,
-        &Msaa,
+        &ViewTarget,
         Has<DepthPrepass>,
         Has<NormalPrepass>,
         Has<MotionVectorPrepass>,
@@ -1024,7 +1024,7 @@ pub fn prepare_prepass_textures(
         entity,
         camera,
         view,
-        msaa,
+        view_target,
         depth_prepass,
         normal_prepass,
         motion_vector_prepass,
@@ -1056,7 +1056,7 @@ pub fn prepare_prepass_textures(
                         label: Some("prepass_depth_texture_1"),
                         size,
                         mip_level_count: 1,
-                        sample_count: msaa.samples(),
+                        sample_count: view_target.msaa_samples(),
                         dimension: TextureDimension::D2,
                         format: CORE_3D_DEPTH_FORMAT,
                         usage: TextureUsages::COPY_DST
@@ -1077,7 +1077,7 @@ pub fn prepare_prepass_textures(
                         label: Some("prepass_depth_texture_2"),
                         size,
                         mip_level_count: 1,
-                        sample_count: msaa.samples(),
+                        sample_count: view_target.msaa_samples(),
                         dimension: TextureDimension::D2,
                         format: CORE_3D_DEPTH_FORMAT,
                         usage: TextureUsages::COPY_DST
@@ -1100,7 +1100,7 @@ pub fn prepare_prepass_textures(
                             label: Some("prepass_normal_texture"),
                             size,
                             mip_level_count: 1,
-                            sample_count: msaa.samples(),
+                            sample_count: view_target.msaa_samples(),
                             dimension: TextureDimension::D2,
                             format: NORMAL_PREPASS_FORMAT,
                             usage: TextureUsages::RENDER_ATTACHMENT
@@ -1122,7 +1122,7 @@ pub fn prepare_prepass_textures(
                             label: Some("prepass_motion_vectors_textures"),
                             size,
                             mip_level_count: 1,
-                            sample_count: msaa.samples(),
+                            sample_count: view_target.msaa_samples(),
                             dimension: TextureDimension::D2,
                             format: MOTION_VECTOR_PREPASS_FORMAT,
                             usage: TextureUsages::RENDER_ATTACHMENT

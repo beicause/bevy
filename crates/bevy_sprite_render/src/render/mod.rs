@@ -35,7 +35,7 @@ use bevy_render::{
     renderer::{RenderDevice, RenderQueue},
     sync_world::RenderEntity,
     texture::{FallbackImage, GpuImage},
-    view::{ExtractedView, Msaa, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
+    view::{ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
     Extract,
 };
 use bevy_shader::{Shader, ShaderDefVal};
@@ -532,20 +532,19 @@ pub fn queue_sprites(
         &RenderVisibleEntities,
         &ExtractedView,
         &ViewTarget,
-        &Msaa,
         Option<&Tonemapping>,
         Option<&DebandDither>,
     )>,
 ) {
     let draw_sprite_function = draw_functions.read().id::<DrawSprite>();
 
-    for (visible_entities, view, view_target, msaa, tonemapping, dither) in &mut views {
+    for (visible_entities, view, view_target, tonemapping, dither) in &mut views {
         let Some(transparent_phase) = transparent_render_phases.get_mut(&view.retained_view_entity)
         else {
             continue;
         };
 
-        let msaa_key = SpritePipelineKey::from_msaa_samples(msaa.samples());
+        let msaa_key = SpritePipelineKey::from_msaa_samples(view_target.msaa_samples());
         let mut view_key =
             SpritePipelineKey::from_color_target_format(view_target.main_texture_view_format())
                 | msaa_key;

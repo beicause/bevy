@@ -16,7 +16,7 @@ use bevy_render::{
         SpecializedRenderPipeline, SpecializedRenderPipelines,
     },
     renderer::RenderDevice,
-    view::{Msaa, ViewUniform, ViewUniforms},
+    view::{ViewTarget, ViewUniform, ViewUniforms},
 };
 use bevy_shader::Shader;
 use bevy_utils::prelude::default;
@@ -116,11 +116,14 @@ pub fn prepare_skybox_prepass_pipelines(
     pipeline_cache: Res<PipelineCache>,
     mut pipelines: ResMut<SpecializedRenderPipelines<SkyboxPrepassPipeline>>,
     pipeline: Res<SkyboxPrepassPipeline>,
-    views: Query<(Entity, Has<NormalPrepass>, &Msaa), (With<Skybox>, With<MotionVectorPrepass>)>,
+    views: Query<
+        (Entity, Has<NormalPrepass>, &ViewTarget),
+        (With<Skybox>, With<MotionVectorPrepass>),
+    >,
 ) {
-    for (entity, normal_prepass, msaa) in &views {
+    for (entity, normal_prepass, view_target) in &views {
         let pipeline_key = SkyboxPrepassPipelineKey {
-            samples: msaa.samples(),
+            samples: view_target.msaa_samples(),
             normal_prepass,
         };
 

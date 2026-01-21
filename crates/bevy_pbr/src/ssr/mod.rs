@@ -483,9 +483,10 @@ pub fn prepare_ssr_pipelines(
     {
         // SSR is only supported in the deferred pipeline, which has no MSAA
         // support. Thus we can assume MSAA is off.
-        let mut mesh_pipeline_view_key = MeshPipelineViewLayoutKey::from(Msaa::Off)
-            | MeshPipelineViewLayoutKey::DEPTH_PREPASS
-            | MeshPipelineViewLayoutKey::DEFERRED_PREPASS;
+        let mut mesh_pipeline_view_key =
+            MeshPipelineViewLayoutKey::from_msaa_samples(Msaa::Off.samples())
+                | MeshPipelineViewLayoutKey::DEPTH_PREPASS
+                | MeshPipelineViewLayoutKey::DEFERRED_PREPASS;
         mesh_pipeline_view_key.set(
             MeshPipelineViewLayoutKey::NORMAL_PREPASS,
             has_normal_prepass,

@@ -630,7 +630,6 @@ pub fn prepare_volumetric_fog_pipelines(
             Entity,
             &ExtractedView,
             &ViewTarget,
-            &Msaa,
             Has<NormalPrepass>,
             Has<DepthPrepass>,
             Has<MotionVectorPrepass>,
@@ -650,7 +649,6 @@ pub fn prepare_volumetric_fog_pipelines(
         entity,
         view,
         view_target,
-        msaa,
         normal_prepass,
         depth_prepass,
         motion_vector_prepass,
@@ -659,7 +657,8 @@ pub fn prepare_volumetric_fog_pipelines(
     ) in view_targets.iter()
     {
         // Create a mesh pipeline view layout key corresponding to the view.
-        let mut mesh_pipeline_view_key = MeshPipelineViewLayoutKey::from(*msaa);
+        let mut mesh_pipeline_view_key =
+            MeshPipelineViewLayoutKey::from_msaa_samples(view_target.msaa_samples());
         mesh_pipeline_view_key.set(MeshPipelineViewLayoutKey::NORMAL_PREPASS, normal_prepass);
         mesh_pipeline_view_key.set(MeshPipelineViewLayoutKey::DEPTH_PREPASS, depth_prepass);
         mesh_pipeline_view_key.set(

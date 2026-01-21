@@ -13,7 +13,7 @@ use bevy_render::{
     render_graph::{RenderGraphExt, ViewNodeRunner},
     render_resource::{BufferUsages, BufferVec, DynamicUniformBuffer, ShaderType, TextureUsages},
     renderer::{RenderDevice, RenderQueue},
-    view::Msaa,
+    view::ViewTarget,
     Render, RenderApp, RenderStartup, RenderSystems,
 };
 use bevy_shader::load_shader_library;
@@ -161,9 +161,9 @@ fn configure_depth_texture_usages(
     }
 }
 
-fn check_msaa(cameras: Query<&Msaa, With<OrderIndependentTransparencySettings>>) {
-    for msaa in &cameras {
-        if msaa.samples() > 1 {
+fn check_msaa(cameras: Query<&ViewTarget, With<OrderIndependentTransparencySettings>>) {
+    for view_target in &cameras {
+        if view_target.msaa_samples() > 1 {
             panic!("MSAA is not supported when using OrderIndependentTransparency");
         }
     }

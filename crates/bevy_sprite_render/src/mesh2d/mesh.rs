@@ -22,7 +22,6 @@ use bevy_ecs::{
 };
 use bevy_math::{Affine3, Vec4};
 use bevy_mesh::{Mesh, Mesh2d, MeshTag, MeshVertexBufferLayoutRef};
-use bevy_render::prelude::Msaa;
 use bevy_render::RenderSystems::PrepareAssets;
 use bevy_render::{
     batching::{
@@ -125,14 +124,13 @@ pub fn check_views_need_specialization(
         &MainEntity,
         &ExtractedView,
         &ViewTarget,
-        &Msaa,
         Option<&Tonemapping>,
         Option<&DebandDither>,
     )>,
     ticks: SystemChangeTick,
 ) {
-    for (view_entity, view, view_target, msaa, tonemapping, dither) in &views {
-        let mut view_key = Mesh2dPipelineKey::from_msaa_samples(msaa.samples())
+    for (view_entity, view, view_target, tonemapping, dither) in &views {
+        let mut view_key = Mesh2dPipelineKey::from_msaa_samples(view_target.msaa_samples())
             | Mesh2dPipelineKey::from_color_target_format(view_target.main_texture_view_format());
 
         if !view.hdr {

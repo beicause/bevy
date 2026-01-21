@@ -40,7 +40,7 @@ use bevy_render::{
     batching::gpu_preprocessing::GpuPreprocessingMode,
     camera::CameraRenderGraph,
     render_phase::PhaseItemBatchSetKey,
-    view::{ExtractedView, RetainedViewEntity},
+    view::{ExtractedView, RetainedViewEntity, ViewTarget},
 };
 pub use main_opaque_pass_2d_node::*;
 pub use main_transparent_pass_2d_node::*;
@@ -68,7 +68,7 @@ use bevy_render::{
     renderer::RenderDevice,
     sync_world::MainEntity,
     texture::TextureCache,
-    view::{Msaa, ViewDepthTexture},
+    view::ViewDepthTexture,
     Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
 };
 
@@ -467,10 +467,10 @@ pub fn prepare_core_2d_depth_textures(
     render_device: Res<RenderDevice>,
     transparent_2d_phases: Res<ViewSortedRenderPhases<Transparent2d>>,
     opaque_2d_phases: Res<ViewBinnedRenderPhases<Opaque2d>>,
-    views_2d: Query<(Entity, &ExtractedCamera, &ExtractedView, &Msaa), (With<Camera2d>,)>,
+    views_2d: Query<(Entity, &ExtractedCamera, &ExtractedView, &ViewTarget), (With<Camera2d>,)>,
 ) {
     let mut textures = <HashMap<_, _>>::default();
-    for (view, camera, extracted_view, msaa) in &views_2d {
+    for (view, camera, extracted_view, view_target) in &views_2d {
         if !opaque_2d_phases.contains_key(&extracted_view.retained_view_entity)
             || !transparent_2d_phases.contains_key(&extracted_view.retained_view_entity)
         {
@@ -485,7 +485,7 @@ pub fn prepare_core_2d_depth_textures(
             .entry((
                 camera.output_color_target.clone(),
                 physical_viewport_size,
-                msaa,
+                view_target.msaa_samples(),
             ))
             .or_insert_with(|| {
                 let descriptor = TextureDescriptor {
@@ -493,7 +493,7 @@ pub fn prepare_core_2d_depth_textures(
                     // The size of the depth texture
                     size: physical_viewport_size.to_extents(),
                     mip_level_count: 1,
-                    sample_count: msaa.samples(),
+                    sample_count: view_target.msaa_samples(),
                     dimension: TextureDimension::D2,
                     format: CORE_2D_DEPTH_FORMAT,
                     usage: TextureUsages::RENDER_ATTACHMENT,

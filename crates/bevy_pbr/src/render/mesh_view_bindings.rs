@@ -26,7 +26,7 @@ use bevy_render::{
     renderer::{RenderAdapter, RenderDevice},
     texture::{FallbackImage, FallbackImageMsaa, FallbackImageZero, GpuImage},
     view::{
-        Msaa, RenderVisibilityRanges, ViewUniform, ViewUniforms,
+        RenderVisibilityRanges, ViewTarget, ViewUniform, ViewUniforms,
         VISIBILITY_RANGES_STORAGE_BUFFER_COUNT,
     },
 };
@@ -144,6 +144,16 @@ impl MeshPipelineViewLayoutKey {
             },
         )
     }
+
+    pub fn from_msaa_samples(value: u32) -> Self {
+        let mut result = MeshPipelineViewLayoutKey::empty();
+
+        if value > 1 {
+            result |= MeshPipelineViewLayoutKey::MULTISAMPLED;
+        }
+
+        result
+    }
 }
 
 impl From<MeshPipelineKey> for MeshPipelineViewLayoutKey {
@@ -174,18 +184,6 @@ impl From<MeshPipelineKey> for MeshPipelineViewLayoutKey {
 
         if cfg!(feature = "bluenoise_texture") {
             result |= MeshPipelineViewLayoutKey::STBN;
-        }
-
-        result
-    }
-}
-
-impl From<Msaa> for MeshPipelineViewLayoutKey {
-    fn from(value: Msaa) -> Self {
-        let mut result = MeshPipelineViewLayoutKey::empty();
-
-        if value.samples() > 1 {
-            result |= MeshPipelineViewLayoutKey::MULTISAMPLED;
         }
 
         result
@@ -600,7 +598,7 @@ pub fn prepare_mesh_view_bind_groups(
         Entity,
         &ViewShadowBindings,
         &ViewClusterBindings,
-        &Msaa,
+        &ViewTarget,
         Option<&ScreenSpaceAmbientOcclusionResources>,
         Option<&ViewPrepassTextures>,
         Option<&ViewTransmissionTexture>,
@@ -662,7 +660,7 @@ pub fn prepare_mesh_view_bind_groups(
             entity,
             shadow_bindings,
             cluster_bindings,
-            msaa,
+            view_target,
             ssao_resources,
             prepass_textures,
             transmission_texture,
@@ -683,8 +681,9 @@ pub fn prepare_mesh_view_bind_groups(
                 .map(|t| &t.screen_space_ambient_occlusion_texture.default_view)
                 .unwrap_or(&fallback_ssao);
 
-            let mut layout_key = MeshPipelineViewLayoutKey::from(*msaa)
-                | MeshPipelineViewLayoutKey::from(prepass_textures);
+            let mut layout_key =
+                MeshPipelineViewLayoutKey::from_msaa_samples(view_target.msaa_samples())
+                    | MeshPipelineViewLayoutKey::from(prepass_textures);
             if has_oit {
                 layout_key |= MeshPipelineViewLayoutKey::OIT_ENABLED;
             }
@@ -733,7 +732,8 @@ pub fn prepare_mesh_view_bind_groups(
 
             // When using WebGL, we can't have a depth texture with multisampling
             let prepass_bindings;
-            if cfg!(any(not(feature = "webgl"), not(target_arch = "wasm32"))) || msaa.samples() == 1
+            if cfg!(any(not(feature = "webgl"), not(target_arch = "wasm32")))
+                || view_target.msaa_samples() == 1
             {
                 prepass_bindings = prepass::get_bindings(prepass_textures);
                 for (binding, index) in prepass_bindings

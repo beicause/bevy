@@ -33,7 +33,7 @@ use bevy_render::{
     sync_component::SyncComponentPlugin,
     sync_world::RenderEntity,
     texture::{CachedTexture, TextureCache},
-    view::{Msaa, ViewUniform, ViewUniformOffset, ViewUniforms},
+    view::{ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
     Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
 };
 use bevy_shader::{load_shader_library, Shader, ShaderDefVal};
@@ -496,16 +496,21 @@ fn extract_ssao_settings(
     mut commands: Commands,
     cameras: Extract<
         Query<
-            (RenderEntity, &Camera, &ScreenSpaceAmbientOcclusion, &Msaa),
+            (
+                RenderEntity,
+                &Camera,
+                &ScreenSpaceAmbientOcclusion,
+                &ViewTarget,
+            ),
             (With<Camera3d>, With<DepthPrepass>, With<NormalPrepass>),
         >,
     >,
 ) {
-    for (entity, camera, ssao_settings, msaa) in &cameras {
-        if *msaa != Msaa::Off {
+    for (entity, camera, ssao_settings, view_target) in &cameras {
+        if view_target.msaa_samples() != 1 {
             error!(
-                "SSAO is being used which requires Msaa::Off, but Msaa is currently set to Msaa::{:?}",
-                *msaa
+                "SSAO is being used which requires Msaa::Off, but Msaa is currently set to Msaax{:?}",
+                view_target.msaa_samples()
             );
             return;
         }

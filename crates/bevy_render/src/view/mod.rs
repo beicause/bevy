@@ -103,7 +103,6 @@ impl Plugin for ViewPlugin {
             // NOTE: windows.is_changed() handles cases where a window was resized
             .add_plugins((
                 ExtractComponentPlugin::<Hdr>::default(),
-                ExtractComponentPlugin::<Msaa>::default(),
                 ExtractComponentPlugin::<OcclusionCulling>::default(),
                 RenderVisibilityRangePlugin,
             ));
@@ -151,19 +150,7 @@ impl Plugin for ViewPlugin {
 /// Some advanced rendering features may require that MSAA is disabled.
 ///
 /// Note that the web currently only supports 1 or 4 samples.
-#[derive(
-    Component,
-    Default,
-    Clone,
-    Copy,
-    ExtractComponent,
-    Reflect,
-    PartialEq,
-    PartialOrd,
-    Eq,
-    Hash,
-    Debug,
-)]
+#[derive(Component, Default, Clone, Copy, Reflect, PartialEq, PartialOrd, Eq, Hash, Debug)]
 #[reflect(Component, Default, PartialEq, Hash, Debug)]
 pub enum Msaa {
     Off = 1,
@@ -619,6 +606,7 @@ pub struct ViewTarget {
     main_texture_b: Option<ColorAttachment>,
     /// The texture view format of main texture. Can be different from texture format.
     main_texture_view_format: TextureFormat,
+    msaa_sample_count: u32,
     /// 0 represents `main_textures.a`, 1 represents `main_textures.b`
     /// This is shared across view targets with the same render target
     main_texture_flag: Option<Arc<AtomicUsize>>,
@@ -850,6 +838,11 @@ impl ViewTarget {
     #[inline]
     pub fn is_hdr(&self) -> bool {
         self.hdr
+    }
+
+    #[inline]
+    pub fn msaa_samples(&self) -> u32 {
+        self.msaa_sample_count
     }
 
     /// The final texture this view will render to.
@@ -1118,17 +1111,20 @@ pub fn prepare_view_targets(
         } else {
             None
         };
-        let main_texture_multisampled =
+        let (msaa_samples, main_texture_multisampled) =
             if let Some(multisampled) = &camera.main_color_target.multisampled {
                 let Some(tex) = images.get(multisampled) else {
                     continue;
                 };
-                Some(CachedTexture {
-                    texture: tex.texture.clone(),
-                    default_view: tex.texture_view.clone(),
-                })
+                (
+                    tex.texture_descriptor.sample_count,
+                    Some(CachedTexture {
+                        texture: tex.texture.clone(),
+                        default_view: tex.texture_view.clone(),
+                    }),
+                )
             } else {
-                None
+                (1, None)
             };
 
         let clear_color = match camera.clear_color {
@@ -1139,6 +1135,7 @@ pub fn prepare_view_targets(
 
         let converted_clear_color = clear_color.map(Into::into);
         commands.entity(entity).insert(ViewTarget {
+            msaa_sample_count: msaa_samples,
             main_texture_flag: camera.main_color_target.main_target_flag.clone(),
             main_texture_a: ColorAttachment::new(
                 main_texture_a,

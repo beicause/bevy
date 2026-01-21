@@ -282,7 +282,7 @@ pub fn prepare_material_meshlet_meshes_prepass(
         (
             &mut MeshletViewMaterialsPrepass,
             &mut MeshletViewMaterialsDeferredGBufferPrepass,
-            &ExtractedView,
+            &ViewTarget,
             AnyOf<(&NormalPrepass, &MotionVectorPrepass, &DeferredPrepass)>,
         ),
         With<Camera3d>,
@@ -293,12 +293,12 @@ pub fn prepare_material_meshlet_meshes_prepass(
     for (
         mut materials,
         mut deferred_materials,
-        view,
+        view_target,
         (normal_prepass, motion_vector_prepass, deferred_prepass),
     ) in &mut views
     {
         let mut view_key = MeshPipelineKey::from_msaa_samples(1)
-            | MeshPipelineKey::from_color_target_format(view.target_format);
+            | MeshPipelineKey::from_color_target_format(view_target.main_texture_view_format());
 
         if normal_prepass.is_some() {
             view_key |= MeshPipelineKey::NORMAL_PREPASS;
