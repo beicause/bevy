@@ -38,7 +38,7 @@ use bevy_render::{
     },
     renderer::{RenderContext, RenderDevice, RenderQueue},
     texture::GpuImage,
-    view::{ViewTarget},
+    view::ViewTarget,
     Render, RenderApp, RenderStartup, RenderSystems,
 };
 use bevy_shader::{load_shader_library, Shader};

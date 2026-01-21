@@ -773,6 +773,29 @@ impl ViewTarget {
         }
     }
 
+    /// The _other_ "main" unsampled texture.
+    /// In most cases you should use [`Self::main_texture`] instead and never this.
+    /// The textures will naturally be swapped when [`Self::post_process_write`] is called.
+    ///
+    /// A use case for this is to be able to prepare a bind group for all main textures
+    /// ahead of time.
+    pub fn main_texture_other(&self) -> &Texture {
+        let Some(b) = &self.main_texture_b else {
+            panic!()
+        };
+        if self
+            .main_texture_flag
+            .as_ref()
+            .unwrap()
+            .load(Ordering::SeqCst)
+            == 1
+        {
+            &self.main_texture_a.texture.texture
+        } else {
+            &b.texture.texture
+        }
+    }
+
     /// The "main" unsampled texture.
     pub fn main_texture_view(&self) -> &TextureView {
         if let Some(b) = &self.main_texture_b

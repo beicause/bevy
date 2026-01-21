@@ -803,13 +803,13 @@ pub fn extract_ui_camera_view(
                             UI_CAMERA_FAR + UI_CAMERA_TRANSFORM_OFFSET,
                         ),
                         clip_from_world: None,
+                        hdr,
                         viewport: UVec4::from((
                             physical_viewport_rect.min,
                             physical_viewport_rect.size(),
                         )),
                         color_grading: Default::default(),
                         invert_culling: false,
-                        hdr,
                     },
                     // Link to the main camera view.
                     UiViewTarget(render_entity),

@@ -8,7 +8,9 @@ use crate::{
     },
     renderer::RenderDevice,
     texture::{GpuImage, ManualTextureViews, OutputColorAttachment},
-    view::{prepare_view_attachments, prepare_view_targets, ViewOutputTargetAttachments, WindowSurfaces},
+    view::{
+        prepare_view_attachments, prepare_view_targets, ViewOutputTargetAttachments, WindowSurfaces,
+    },
     ExtractSchedule, MainWorld, Render, RenderApp, RenderStartup, RenderSystems,
 };
 use alloc::{borrow::Cow, sync::Arc};

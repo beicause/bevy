@@ -16,7 +16,7 @@ use bevy_render::{
         *,
     },
     renderer::RenderDevice,
-    view::{ ViewTarget},
+    view::ViewTarget,
     Render, RenderApp, RenderStartup, RenderSystems,
 };
 use bevy_shader::Shader;
