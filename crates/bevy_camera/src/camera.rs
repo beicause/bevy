@@ -339,8 +339,7 @@ pub enum ViewportConversionError {
     CameraMainTextureUsages,
     VisibleEntities,
     Transform,
-    Visibility,
-    RenderTarget
+    Visibility
 )]
 pub struct Camera {
     /// If set, this camera will render to the given [`Viewport`] rectangle within the configured [`RenderTarget`].

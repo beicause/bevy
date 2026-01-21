@@ -1,5 +1,6 @@
 use alloc::sync::Arc;
 use bevy_ecs::{component::Component, entity::Entity};
+use bevy_math::UVec2;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{NormalizedRenderTarget, RenderTarget};
@@ -19,9 +20,7 @@ impl RenderColorTarget {
         multisampled: Option<RenderTarget>,
     ) -> Self {
         let main_target = main_b.as_ref().map(|_| Arc::new(AtomicUsize::new(0)));
-        let main_b = main_b.unwrap_or(RenderTarget::None {
-            size: Default::default(),
-        });
+        let main_b = main_b.unwrap_or(RenderTarget::None { size: UVec2::ZERO });
         Self {
             main_a,
             main_b,
@@ -127,16 +126,16 @@ impl From<NormalizedRenderTarget> for NormalizedRenderColorTarget {
 pub struct NoAutoConfiguredColorTarget;
 
 #[derive(Component)]
-#[relationship(relationship_target  = ColorTarget)]
-pub struct ColorTargetOf(pub Entity);
+#[relationship(relationship_target  = MainColorTarget)]
+pub struct MainColorTargetOf(pub Entity);
 
 #[derive(Component)]
 #[relationship(relationship_target  = OutputColorTarget)]
 pub struct OutputColorTargetOf(pub Entity);
 
 #[derive(Component)]
-#[relationship_target(relationship  = ColorTargetOf, linked_spawn)]
-pub struct ColorTarget(Vec<Entity>);
+#[relationship_target(relationship  = MainColorTargetOf, linked_spawn)]
+pub struct MainColorTarget(Vec<Entity>);
 
 #[derive(Component)]
 #[relationship_target(relationship  = OutputColorTargetOf, linked_spawn)]

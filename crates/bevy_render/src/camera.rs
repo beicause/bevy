@@ -18,8 +18,8 @@ use bevy_app::{App, Plugin, PostStartup, PostUpdate};
 use bevy_asset::{AssetEvent, AssetEventSystems, AssetId, Assets};
 use bevy_camera::{
     color_target::{
-        ColorTargetOf, NoAutoConfiguredColorTarget, NormalizedRenderColorTarget, OutputColorTarget,
-        OutputColorTargetOf, RenderColorTarget,
+        MainColorTargetOf, NoAutoConfiguredColorTarget, NormalizedRenderColorTarget,
+        OutputColorTarget, OutputColorTargetOf, RenderColorTarget,
     },
     primitives::Frustum,
     visibility::{self, RenderLayers, VisibleEntities},
@@ -36,7 +36,7 @@ use bevy_ecs::{
     lifecycle::HookContext,
     message::MessageReader,
     prelude::With,
-    query::{Has, Or, QueryItem, Without},
+    query::{Has, QueryItem, Without},
     reflect::ReflectComponent,
     relationship::Relationship,
     resource::Resource,
@@ -72,20 +72,19 @@ impl Plugin for CameraPlugin {
                 (
                     (
                         camera_system,
-                        auto_configure_camera_color_target,
+                        configure_camera_color_target,
                         sync_camera_color_target_config,
                     )
                         .chain()
                         .in_set(CameraUpdateSystems),
-                    camera_with_render_target_insert_output_color_target
-                        .in_set(CameraUpdateSystems),
+                    configure_camera_output_color_target.in_set(CameraUpdateSystems),
                 ),
             )
             .add_systems(
                 PostUpdate,
                 (
                     camera_system,
-                    auto_configure_camera_color_target,
+                    configure_camera_color_target,
                     sync_camera_color_target_config,
                 )
                     .chain()
@@ -109,29 +108,34 @@ impl Plugin for CameraPlugin {
     }
 }
 
-fn camera_with_render_target_insert_output_color_target(
+fn configure_camera_output_color_target(
     mut commands: Commands,
     query: Query<
-        Entity,
+        (Entity, Has<RenderTarget>, Has<RenderColorTarget>),
         (
             With<Camera>,
-            Or<(With<RenderTarget>, With<RenderColorTarget>)>,
             Without<OutputColorTargetOf>,
             Without<NoAutoConfiguredColorTarget>,
         ),
     >,
 ) {
-    for entity in query.iter() {
+    for (entity, has_render_target, has_render_color_target) in query.iter() {
+        if !has_render_target && !has_render_color_target {
+            commands.entity(entity).insert(RenderTarget::default());
+        }
         commands.entity(entity).insert(OutputColorTargetOf(entity));
     }
 }
 
-fn auto_configure_camera_color_target(
+fn configure_camera_color_target(
     mut commands: Commands,
     mut image_assets: ResMut<Assets<Image>>,
     query: Query<
         (Entity, &Camera, &Msaa, &CameraMainTextureUsages, Has<Hdr>),
-        (Without<NoAutoConfiguredColorTarget>, Without<ColorTargetOf>),
+        (
+            Without<NoAutoConfiguredColorTarget>,
+            Without<MainColorTargetOf>,
+        ),
     >,
 ) {
     for (entity, camera, msaa, texture_usages, hdr) in query.iter() {
@@ -189,7 +193,9 @@ fn auto_configure_camera_color_target(
                     Some(msaa_texture),
                 ))
                 .id();
-            commands.entity(entity).insert(ColorTargetOf(main_textures));
+            commands
+                .entity(entity)
+                .insert(MainColorTargetOf(main_textures));
         } else {
             let main_textures = commands
                 .spawn(RenderColorTarget::new(
@@ -204,7 +210,9 @@ fn auto_configure_camera_color_target(
                     None,
                 ))
                 .id();
-            commands.entity(entity).insert(ColorTargetOf(main_textures));
+            commands
+                .entity(entity)
+                .insert(MainColorTargetOf(main_textures));
         }
     }
 }
@@ -217,7 +225,7 @@ fn sync_camera_color_target_config(
             &Msaa,
             &CameraMainTextureUsages,
             Has<Hdr>,
-            &ColorTargetOf,
+            &MainColorTargetOf,
         ),
         Without<NoAutoConfiguredColorTarget>,
     >,
@@ -616,7 +624,7 @@ pub fn extract_cameras(
                 Option<&Projection>,
                 Has<NoIndirectDrawing>,
             ),
-            (Option<&ColorTargetOf>, Option<&OutputColorTargetOf>),
+            (Option<&MainColorTargetOf>, Option<&OutputColorTargetOf>),
         )>,
     >,
     render_targets: Extract<Query<&RenderTarget>>,
