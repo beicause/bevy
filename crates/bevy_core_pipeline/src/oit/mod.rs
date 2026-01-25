@@ -38,16 +38,17 @@ pub mod resolve;
 #[derive(Clone, Copy, ExtractComponent, Reflect, ShaderType, Component)]
 #[reflect(Clone, Default)]
 pub struct OrderIndependentTransparencySettings {
-    /// Controls how many fragments will be exactly sorted.
-    /// If the scene has more fragments than this, they will be merged approximately.
-    /// More sorted fragments is more accurate but will be slower.
+    /// Controls how many tranparent fragments will be exactly sorted.
+    /// If the view has pixels necessitating more layers than this, some fragments will be merged approximately.
+    /// Higher values make the result more accurate but slower.
     pub sorted_fragment_max_count: u32,
-    /// The average fragments per pixel stored in the buffer. This should be bigger enough otherwise the fragments will be discarded.
-    /// Higher values increase memory usage.
+    /// The average number of transparent fragments per pixel stored in the buffer. A bigger value allows for more
+    /// layers of transparent fragments over larger regions of the view.
+    /// Higher values reduce the occurence of artifacts but increase video memory usage.
     pub fragments_per_pixel_average: f32,
-    /// Threshold for which fragments will be added to the blending layers.
-    /// This can be tweaked to optimize quality / layers count. Higher values will
-    /// allow lower number of layers and a better performance, compromising quality.
+    /// Threshold of accumulated opacity after which no more fragments are added.
+    /// Lower values adaptively reduce the number of layers accumulated and may improve performance, compromising quality.
+    /// Default: 1.0 (acummulate until full opacity)
     pub alpha_threshold: f32,
 }
 
@@ -56,7 +57,7 @@ impl Default for OrderIndependentTransparencySettings {
         Self {
             sorted_fragment_max_count: 8,
             fragments_per_pixel_average: 4.0,
-            alpha_threshold: 0.0,
+            alpha_threshold: 1.0,
         }
     }
 }
