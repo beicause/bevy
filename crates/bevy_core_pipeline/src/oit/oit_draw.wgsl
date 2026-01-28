@@ -12,8 +12,8 @@ fn oit_draw(position: vec4f, color: vec4f) {
         return;
     }
 #endif
-    // Don't pollute the list with fully transparent fragments
-    if color.a == 0.0 {
+    // Cull fragments deemed too transparent
+    if color.a < oit_settings.alpha_culling {
         return;
     }
     // get the index of the current fragment relative to the screen size

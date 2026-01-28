@@ -41,15 +41,21 @@ pub struct OrderIndependentTransparencySettings {
     /// Controls how many tranparent fragments will be exactly sorted.
     /// If the view has pixels necessitating more layers than this, some fragments will be merged approximately.
     /// Higher values make the result more accurate but slower.
+    /// Default: 8
     pub sorted_fragment_max_count: u32,
     /// The average number of transparent fragments per pixel stored in the buffer. A bigger value allows for more
     /// layers of transparent fragments over larger regions of the view.
     /// Higher values reduce the occurence of artifacts but increase video memory usage.
+    /// Default: 4.0
     pub fragments_per_pixel_average: f32,
-    /// Threshold of accumulated opacity after which no more fragments are added.
+    /// Minimum opacity value to accept a fragment for composition. Fragments more transparent than that are discarded.
+    /// Higher values can increase performance, compromising correctness.
+    /// Default: 0.0 (don't cull any fragment)
+    pub alpha_culling: f32,
+    /// Maximum accumulated opacity after which no more fragments are composited.
     /// Lower values adaptively reduce the number of layers accumulated and may improve performance, compromising quality.
     /// Default: 1.0 (acummulate until full opacity)
-    pub alpha_threshold: f32,
+    pub max_composited_opacity: f32,
 }
 
 impl Default for OrderIndependentTransparencySettings {
@@ -57,7 +63,8 @@ impl Default for OrderIndependentTransparencySettings {
         Self {
             sorted_fragment_max_count: 8,
             fragments_per_pixel_average: 4.0,
-            alpha_threshold: 1.0,
+            alpha_culling: 0.0,
+            max_composited_opacity: 1.0,
         }
     }
 }

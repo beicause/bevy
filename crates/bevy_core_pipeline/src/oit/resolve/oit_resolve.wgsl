@@ -118,7 +118,7 @@ fn resolve(head: u32, opaque_depth: f32) -> vec4<f32> {
         let alpha = packed_depth_alpha_get_alpha(fragment_list[i].depth_alpha);
         var base_color = vec4(color.rgb * alpha, alpha);
         final_color = blend(final_color, base_color);
-        if final_color.a > settings.alpha_threshold {
+        if final_color.a > settings.max_composited_opacity {
             break;
         }
     }
