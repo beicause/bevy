@@ -79,9 +79,8 @@ fn resolve(head: u32, opaque_depth: f32) -> vec4<f32> {
             // There is still room in the sorted list.
             // Insert the fragment so that the list stay sorted.
             var i = sorted_frag_count;
-            while i > 0 && fragment_node.depth_alpha > fragment_list[i - 1].depth_alpha {
+            for (; i > 0 && fragment_node.depth_alpha > fragment_list[i - 1].depth_alpha; i -= 1) {
                 fragment_list[i] = fragment_list[i - 1];
-                i -= 1;
             }
             fragment_list[i].color = fragment_node.color;
             fragment_list[i].depth_alpha = fragment_node.depth_alpha;
@@ -95,9 +94,8 @@ fn resolve(head: u32, opaque_depth: f32) -> vec4<f32> {
             let nearest_alpha = packed_depth_alpha_get_alpha(fragment_list[0].depth_alpha);
             final_color = blend(final_color, vec4f(nearest_color * nearest_alpha, nearest_alpha));
             var i = 0u;
-            while i < SORTED_FRAGMENT_MAX_COUNT - 1 && fragment_node.depth_alpha < fragment_list[i + 1].depth_alpha {
+            for (; i < SORTED_FRAGMENT_MAX_COUNT - 1 && fragment_node.depth_alpha < fragment_list[i + 1].depth_alpha; i += 1) {
                 fragment_list[i] = fragment_list[i + 1];
-                i += 1;
             }
             fragment_list[i].color = fragment_node.color;
             fragment_list[i].depth_alpha = fragment_node.depth_alpha;
