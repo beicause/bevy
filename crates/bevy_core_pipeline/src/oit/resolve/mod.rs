@@ -115,8 +115,6 @@ impl OitResolvePipeline {
                 ShaderStages::FRAGMENT,
                 (
                     uniform_buffer::<ViewUniform>(true),
-                    // settings
-                    uniform_buffer::<OrderIndependentTransparencySettings>(true),
                     // nodes
                     storage_buffer_read_only_sized(false, None),
                     // heads
@@ -255,15 +253,8 @@ pub fn prepare_oit_resolve_bind_group(
     pipeline_cache: Res<PipelineCache>,
     buffers: Res<OitBuffers>,
 ) {
-    if let (
-        Some(binding),
-        Some(settings_binding),
-        Some(nodes_binding),
-        Some(heads_binding),
-        Some(atomic_counter_binding),
-    ) = (
+    if let (Some(binding), Some(nodes_binding), Some(heads_binding), Some(atomic_counter_binding)) = (
         view_uniforms.uniforms.binding(),
-        buffers.settings.binding(),
         buffers.nodes.binding(),
         buffers.heads.binding(),
         buffers.atomic_counter.binding(),
@@ -273,7 +264,6 @@ pub fn prepare_oit_resolve_bind_group(
             &pipeline_cache.get_bind_group_layout(&resolve_pipeline.view_bind_group_layout),
             &BindGroupEntries::sequential((
                 binding.clone(),
-                settings_binding,
                 nodes_binding,
                 heads_binding,
                 atomic_counter_binding,

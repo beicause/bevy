@@ -195,7 +195,6 @@ struct OrderIndependentTransparencySettings {
     sorted_fragment_max_count: u32,
     fragments_per_pixel_average: f32,
     alpha_culling: f32,
-    max_composited_opacity: f32,
 };
 
 struct OitFragmentNode {

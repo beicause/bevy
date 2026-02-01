@@ -2,10 +2,9 @@
 #import bevy_pbr::mesh_view_types::{OitFragmentNode, OrderIndependentTransparencySettings}
 
 @group(0) @binding(0) var<uniform> view: View;
-@group(0) @binding(1) var<uniform> settings: OrderIndependentTransparencySettings;
-@group(0) @binding(2) var<storage, read> nodes: array<OitFragmentNode>;
-@group(0) @binding(3) var<storage, read_write> heads: array<u32>; // No need to be atomic
-@group(0) @binding(4) var<storage, read_write> atomic_counter: u32; // No need to be atomic
+@group(0) @binding(1) var<storage, read> nodes: array<OitFragmentNode>;
+@group(0) @binding(2) var<storage, read_write> heads: array<u32>; // No need to be atomic
+@group(0) @binding(3) var<storage, read_write> atomic_counter: u32; // No need to be atomic
 
 #ifndef DEPTH_PREPASS
 @group(1) @binding(0) var depth: texture_depth_2d;
@@ -118,9 +117,6 @@ fn resolve(head: u32, opaque_depth: f32) -> vec4<f32> {
         let alpha = packed_depth_alpha_get_alpha(fragment_list[i].depth_alpha);
         var base_color = vec4(color.rgb * alpha, alpha);
         final_color = blend(final_color, base_color);
-        if final_color.a > settings.max_composited_opacity {
-            break;
-        }
     }
 
     return final_color;

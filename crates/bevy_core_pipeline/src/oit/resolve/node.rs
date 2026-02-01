@@ -8,7 +8,7 @@ use bevy_render::{
     view::{ViewDepthTexture, ViewTarget, ViewUniformOffset},
 };
 
-use crate::{oit::OrderIndependentTransparencySettingsOffset, prepass::DepthPrepass};
+use crate::prepass::DepthPrepass;
 
 use super::{OitResolveBindGroup, OitResolvePipeline, OitResolvePipelineId};
 
@@ -17,7 +17,6 @@ pub fn oit_resolve(
         &ExtractedCamera,
         &ViewTarget,
         &ViewUniformOffset,
-        &OrderIndependentTransparencySettingsOffset,
         &OitResolvePipelineId,
         &ViewDepthTexture,
         Option<&MainPassResolutionOverride>,
@@ -32,7 +31,6 @@ pub fn oit_resolve(
         camera,
         view_target,
         view_uniform,
-        oit_settings,
         oit_resolve_pipeline_id,
         depth,
         resolution_override,
@@ -81,7 +79,7 @@ pub fn oit_resolve(
     }
 
     render_pass.set_render_pipeline(pipeline);
-    render_pass.set_bind_group(0, &bind_group, &[view_uniform.offset, oit_settings.offset]);
+    render_pass.set_bind_group(0, &bind_group, &[view_uniform.offset]);
     if let Some(depth_bind_group) = &depth_bind_group {
         render_pass.set_bind_group(1, depth_bind_group, &[]);
     }

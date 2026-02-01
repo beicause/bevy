@@ -52,10 +52,6 @@ pub struct OrderIndependentTransparencySettings {
     /// Higher values can increase performance, compromising correctness.
     /// Default: 0.0 (don't cull any fragment)
     pub alpha_culling: f32,
-    /// Maximum accumulated opacity after which no more fragments are composited.
-    /// Lower values adaptively reduce the number of layers accumulated and may improve performance, compromising quality.
-    /// Default: 1.0 (acummulate until full opacity)
-    pub max_composited_opacity: f32,
 }
 
 impl Default for OrderIndependentTransparencySettings {
@@ -64,7 +60,6 @@ impl Default for OrderIndependentTransparencySettings {
             sorted_fragment_max_count: 8,
             fragments_per_pixel_average: 4.0,
             alpha_culling: 0.0,
-            max_composited_opacity: 1.0,
         }
     }
 }
