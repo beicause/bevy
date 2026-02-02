@@ -135,8 +135,6 @@
 //! After the loader is implemented, it needs to be registered with the [`AssetServer`] using [`App::register_asset_loader`](AssetApp::register_asset_loader).
 //! Once your asset type is loaded, you can use it in your game like any other asset type!
 //!
-//! If you want to save your assets back to disk, you should implement [`AssetSaver`](saver::AssetSaver) as well.
-//! This trait mirrors [`AssetLoader`] in structure, and works in tandem with [`AssetWriter`](io::AssetWriter), which mirrors [`AssetReader`](io::AssetReader).
 
 #![expect(missing_docs, reason = "Not all docs are written yet, see #3492.")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -192,7 +190,7 @@ use bevy_diagnostic::{Diagnostic, DiagnosticsStore, RegisterDiagnostic};
 pub use direct_access_ext::DirectAssetAccessExt;
 pub use event::*;
 pub use folder::*;
-pub use futures_lite::{AsyncReadExt, AsyncWriteExt};
+pub use futures_lite::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 pub use handle::*;
 pub use id::*;
 pub use loader::*;
@@ -712,7 +710,7 @@ mod tests {
             gated::{GateOpener, GatedReader},
             memory::{Dir, MemoryAssetReader, MemoryAssetWriter},
             AssetReader, AssetReaderError, AssetSourceBuilder, AssetSourceEvent, AssetSourceId,
-            AssetWatcher, Reader, ReaderRequiredFeatures,
+            AssetWatcher, Reader,
         },
         loader::{AssetLoader, LoadContext},
         Asset, AssetApp, AssetEvent, AssetId, AssetLoadError, AssetLoadFailedEvent, AssetPath,
@@ -868,11 +866,7 @@ mod tests {
         ) -> Result<impl Reader + 'a, AssetReaderError> {
             self.memory_reader.read_meta(path).await
         }
-        async fn read<'a>(
-            &'a self,
-            path: &'a Path,
-            required_features: ReaderRequiredFeatures,
-        ) -> Result<impl Reader + 'a, AssetReaderError> {
+        async fn read<'a>(&'a self, path: &'a Path) -> Result<impl Reader + 'a, AssetReaderError> {
             let attempt_number = {
                 let mut attempt_counters = self.attempt_counters.lock().unwrap();
                 if let Some(existing) = attempt_counters.get_mut(path) {
@@ -900,7 +894,7 @@ mod tests {
                 .await;
             }
 
-            self.memory_reader.read(path, required_features).await
+            self.memory_reader.read(path).await
         }
     }
 

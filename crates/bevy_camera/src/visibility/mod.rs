@@ -6,14 +6,17 @@ use core::any::TypeId;
 use bevy_ecs::entity::EntityHashMap;
 use bevy_ecs::lifecycle::HookContext;
 use bevy_ecs::world::DeferredWorld;
+use bevy_mesh::skinning::{
+    entity_aabb_from_skinned_mesh_bounds, SkinnedMesh, SkinnedMeshInverseBindposes,
+};
 use derive_more::derive::{Deref, DerefMut};
 pub use range::*;
 pub use render_layers::*;
 
-use bevy_app::{Plugin, PostUpdate};
+use bevy_app::{Plugin, PostUpdate, ValidateParentHasComponentPlugin};
 use bevy_asset::prelude::AssetChanged;
 use bevy_asset::{AssetEventSystems, Assets};
-use bevy_ecs::{hierarchy::validate_parent_has_component, prelude::*};
+use bevy_ecs::prelude::*;
 use bevy_reflect::{std_traits::ReflectDefault, Reflect};
 use bevy_transform::{components::GlobalTransform, TransformSystems};
 use bevy_utils::{Parallel, TypeIdMap};
@@ -113,7 +116,6 @@ impl PartialEq<&Visibility> for Visibility {
 /// [`VisibilityPropagate`]: VisibilitySystems::VisibilityPropagate
 #[derive(Component, Deref, Debug, Default, Clone, Copy, Reflect, PartialEq, Eq)]
 #[reflect(Component, Default, Debug, PartialEq, Clone)]
-#[component(on_insert = validate_parent_has_component::<Self>)]
 pub struct InheritedVisibility(bool);
 
 impl InheritedVisibility {
@@ -211,14 +213,14 @@ impl ViewVisibility {
     #[inline]
     fn was_visible_now_hidden(self) -> bool {
         // The first bit is false (current), and the second bit is true (previous).
-        self.0 == 0b10
+        (self.0 & 0b11) == 0b10
     }
 
     #[inline]
     fn update(&mut self) {
         // Copy the first bit (current) to the second bit position (previous)
-        // Clear the second bit, then set it based on the first bit
-        self.0 = (self.0 & !2) | ((self.0 & 1) << 1);
+        // and clear the first bit (current).
+        self.0 = (self.0 & 1) << 1;
     }
 }
 
@@ -238,9 +240,18 @@ pub trait SetViewVisibility {
 impl<'a> SetViewVisibility for Mut<'a, ViewVisibility> {
     #[inline]
     fn set_visible(&mut self) {
-        if !self.as_ref().get() {
-            // Set the first bit (current vis) to true
-            self.0 |= 1;
+        // Only update if it's not already visible.
+        // This is important because `set_visible` may be called multiple times per frame.
+        if self.0 & 1 == 0 {
+            if self.0 & 2 != 0 {
+                // If it was already visible last frame, we don't want to trigger change detection
+                // because it's still visible this frame.
+                self.bypass_change_detection().0 |= 1;
+            } else {
+                // If it was NOT visible last frame, this is a transition from hidden to visible.
+                // We want to trigger change detection here.
+                self.0 |= 1;
+            }
         }
     }
 }
@@ -252,9 +263,22 @@ impl<'a> SetViewVisibility for Mut<'a, ViewVisibility> {
 /// - when a [`Mesh`] is updated but its [`Aabb`] is not, which might happen with animations,
 /// - when using some light effects, like wanting a [`Mesh`] out of the [`Frustum`]
 ///   to appear in the reflection of a [`Mesh`] within.
-#[derive(Debug, Component, Default, Reflect)]
+#[derive(Debug, Component, Default, Reflect, Clone, PartialEq)]
 #[reflect(Component, Default, Debug)]
 pub struct NoFrustumCulling;
+
+/// Use this component to enable dynamic skinned mesh bounds. The [`Aabb`]
+/// component of the skinned mesh will be automatically updated each frame based
+/// on the current joint transforms.
+///
+/// `DynamicSkinnedMeshBounds` depends on data from `Mesh::skinned_mesh_bounds`
+/// and `SkinnedMesh`. The resulting `Aabb` will reliably enclose meshes where
+/// vertex positions are only affected by skinning. But the `Aabb` may be larger
+/// than is optimal, and doesn't account for morph targets, vertex shaders, and
+/// anything else that modifies vertex positions.
+#[derive(Debug, Component, Default, Reflect)]
+#[reflect(Component, Default, Debug)]
+pub struct DynamicSkinnedMeshBounds;
 
 /// Collection of entities visible from the current view.
 ///
@@ -385,7 +409,8 @@ impl Plugin for VisibilityPlugin {
     fn build(&self, app: &mut bevy_app::App) {
         use VisibilitySystems::*;
 
-        app.register_required_components::<Mesh3d, Visibility>()
+        app.add_plugins(ValidateParentHasComponentPlugin::<InheritedVisibility>::default())
+            .register_required_components::<Mesh3d, Visibility>()
             .register_required_components::<Mesh3d, VisibilityClass>()
             .register_required_components::<Mesh2d, Visibility>()
             .register_required_components::<Mesh2d, VisibilityClass>()
@@ -411,7 +436,9 @@ impl Plugin for VisibilityPlugin {
             .add_systems(
                 PostUpdate,
                 (
-                    calculate_bounds.in_set(CalculateBounds),
+                    (calculate_bounds, update_skinned_mesh_bounds)
+                        .chain()
+                        .in_set(CalculateBounds),
                     (visibility_propagate_system, reset_view_visibility)
                         .in_set(VisibilityPropagate),
                     check_visibility.in_set(CheckVisibility),
@@ -472,6 +499,36 @@ pub fn calculate_bounds(
         .for_each(|(mesh_handle, mut old_aabb)| {
             if let Some(aabb) = meshes.get(mesh_handle).and_then(MeshAabb::compute_aabb) {
                 *old_aabb = aabb;
+            }
+        });
+}
+
+// Update the `Aabb` component of all skinned mesh entities with a `DynamicSkinnedMeshBounds`
+// component.
+fn update_skinned_mesh_bounds(
+    inverse_bindposes_assets: Res<Assets<SkinnedMeshInverseBindposes>>,
+    mesh_assets: Res<Assets<Mesh>>,
+    mut mesh_entities: Query<
+        (&mut Aabb, &Mesh3d, &SkinnedMesh, Option<&GlobalTransform>),
+        With<DynamicSkinnedMeshBounds>,
+    >,
+    joint_entities: Query<&GlobalTransform>,
+) {
+    mesh_entities
+        .par_iter_mut()
+        .for_each(|(mut aabb, mesh, skinned_mesh, world_from_entity)| {
+            if let Some(inverse_bindposes_asset) =
+                inverse_bindposes_assets.get(&skinned_mesh.inverse_bindposes)
+                && let Some(mesh_asset) = mesh_assets.get(mesh)
+                && let Ok(skinned_aabb) = entity_aabb_from_skinned_mesh_bounds(
+                    &joint_entities,
+                    mesh_asset,
+                    skinned_mesh,
+                    inverse_bindposes_asset,
+                    world_from_entity,
+                )
+            {
+                *aabb = skinned_aabb.into();
             }
         });
 }
@@ -1054,5 +1111,142 @@ mod test {
         let entity_clone_visibility_class =
             world.entity(entity_clone).get::<VisibilityClass>().unwrap();
         assert_eq!(entity_clone_visibility_class.len(), 1);
+    }
+
+    #[test]
+    fn view_visibility_lifecycle() {
+        let mut app = App::new();
+        app.add_plugins((
+            TaskPoolPlugin::default(),
+            bevy_asset::AssetPlugin::default(),
+            bevy_mesh::MeshPlugin,
+            bevy_transform::TransformPlugin,
+            VisibilityPlugin,
+        ));
+
+        #[derive(Resource, Default)]
+        struct ManualMark(bool);
+        #[derive(Resource, Default)]
+        struct ObservedChanged(bool);
+        app.init_resource::<ManualMark>();
+        app.init_resource::<ObservedChanged>();
+
+        app.add_systems(
+            PostUpdate,
+            (
+                (|mut q: Query<&mut ViewVisibility>, mark: Res<ManualMark>| {
+                    if mark.0 {
+                        for mut v in &mut q {
+                            v.set_visible();
+                        }
+                    }
+                })
+                .in_set(VisibilitySystems::CheckVisibility),
+                (|q: Query<(), Changed<ViewVisibility>>, mut observed: ResMut<ObservedChanged>| {
+                    if !q.is_empty() {
+                        observed.0 = true;
+                    }
+                })
+                .after(VisibilitySystems::MarkNewlyHiddenEntitiesInvisible),
+            ),
+        );
+
+        let entity = app.world_mut().spawn(ViewVisibility::HIDDEN).id();
+
+        // Advance system ticks and clear spawn change
+        app.update();
+        app.world_mut().resource_mut::<ObservedChanged>().0 = false;
+
+        // Frame 1: do nothing
+        app.update();
+        {
+            assert!(
+                !app.world()
+                    .entity(entity)
+                    .get::<ViewVisibility>()
+                    .unwrap()
+                    .get(),
+                "Frame 1: should be hidden"
+            );
+            assert!(
+                !app.world().resource::<ObservedChanged>().0,
+                "Frame 1: should not be changed"
+            );
+        }
+
+        // Frame 2: set entity as visible
+        app.world_mut().resource_mut::<ManualMark>().0 = true;
+        app.update();
+        {
+            assert!(
+                app.world()
+                    .entity(entity)
+                    .get::<ViewVisibility>()
+                    .unwrap()
+                    .get(),
+                "Frame 2: should be visible"
+            );
+            assert!(
+                app.world().resource::<ObservedChanged>().0,
+                "Frame 2: should be changed"
+            );
+        }
+
+        // Frame 3: still visible
+        app.world_mut().resource_mut::<ManualMark>().0 = true;
+        app.world_mut().resource_mut::<ObservedChanged>().0 = false;
+        app.update();
+        {
+            assert!(
+                app.world()
+                    .entity(entity)
+                    .get::<ViewVisibility>()
+                    .unwrap()
+                    .get(),
+                "Frame 3: should be visible"
+            );
+            assert!(
+                !app.world().resource::<ObservedChanged>().0,
+                "Frame 3: should NOT be changed"
+            );
+        }
+
+        // Frame 4: do nothing (becomes hidden)
+        app.world_mut().resource_mut::<ManualMark>().0 = false;
+        app.world_mut().resource_mut::<ObservedChanged>().0 = false;
+        app.update();
+        {
+            assert!(
+                !app.world()
+                    .entity(entity)
+                    .get::<ViewVisibility>()
+                    .unwrap()
+                    .get(),
+                "Frame 4: should be hidden"
+            );
+            assert!(
+                app.world().resource::<ObservedChanged>().0,
+                "Frame 4: should be changed"
+            );
+        }
+
+        // Frame 5: do nothing
+        app.world_mut().resource_mut::<ManualMark>().0 = false;
+        app.world_mut().resource_mut::<ObservedChanged>().0 = false;
+        app.update();
+        {
+            assert!(
+                !app.world()
+                    .entity(entity)
+                    .get::<ViewVisibility>()
+                    .unwrap()
+                    .get(),
+                "Frame 5: should be hidden"
+            );
+            assert!(
+                !app.world().resource::<ObservedChanged>().0,
+                "Frame 5: should NOT be changed"
+            );
+        }
     }
 }
