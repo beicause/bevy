@@ -1168,7 +1168,7 @@ impl Mesh {
     /// Create a [`Mesh`] with the given compression flags.
     ///
     /// See [`MeshAttributeCompressionFlags`] for more context.
-    /// if vertex attrubutes are already compressed, the behavior of `attribute_compression` is bitwise OR, which means it doesn't decompress.
+    /// if vertex attrubutes are already compressed, they are unchanged and won't decompress.
     ///
     /// If `index_compression` is true and indices are u32 and vertex count <= 65535, indices will be converted to u16, otherwise it does nothing.
     ///
@@ -1176,9 +1176,17 @@ impl Mesh {
     /// Panics when the mesh data has already been extracted to `RenderWorld`.
     pub fn compressed_mesh(
         mut self,
-        attribute_compression: MeshAttributeCompressionFlags,
+        mut attribute_compression: MeshAttributeCompressionFlags,
         index_compression: bool,
     ) -> Mesh {
+        // Colors are unchange if already compressed.
+        if self
+            .attribute_compression
+            .intersects(MeshAttributeCompressionFlags::COMPRESS_COLOR_RESERVED_BIT)
+        {
+            attribute_compression
+                .remove(MeshAttributeCompressionFlags::COMPRESS_COLOR_RESERVED_BIT);
+        }
         self.attribute_compression |= attribute_compression;
         for mut attr in [
             Mesh::ATTRIBUTE_POSITION,
