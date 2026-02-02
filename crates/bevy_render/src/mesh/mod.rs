@@ -207,8 +207,7 @@ impl RenderAsset for RenderMesh {
             layout: mesh_vertex_buffer_layout,
             #[cfg(feature = "morph")]
             morph_targets,
-            // `final_aabb` is not available in `prepare_asset` so we have to compute it.
-            aabb: mesh.compute_aabb(),
+            aabb: mesh.final_aabb.or_else(|| mesh.compute_aabb()),
             uv0_range: mesh.compute_uv_range(Mesh::ATTRIBUTE_UV_0),
             uv1_range: mesh.compute_uv_range(Mesh::ATTRIBUTE_UV_1),
         })

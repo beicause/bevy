@@ -232,6 +232,9 @@ pub struct GltfPlugin {
 
     /// Mesh attribute compression flags for the loaded meshes.
     pub mesh_attribute_compression: MeshAttributeCompressionFlags,
+
+    /// Wether to convert mesh indices to u16 if vertex count <= 65535 and indices is u32.
+    pub mesh_index_compression: bool,
 }
 
 impl Default for GltfPlugin {
@@ -242,6 +245,7 @@ impl Default for GltfPlugin {
             convert_coordinates: GltfConvertCoordinates::default(),
             skinned_mesh_bounds_policy: Default::default(),
             mesh_attribute_compression: MeshAttributeCompressionFlags::default(),
+            mesh_index_compression: false,
         }
     }
 }
@@ -298,6 +302,7 @@ impl Plugin for GltfPlugin {
             extensions: extensions.0.clone(),
             default_skinned_mesh_bounds_policy: self.skinned_mesh_bounds_policy,
             default_mesh_attribute_compression: self.mesh_attribute_compression,
+            default_mesh_index_compression: self.mesh_index_compression,
         });
     }
 }

@@ -570,6 +570,7 @@ pub struct MeshInputUniform {
     pub timestamp: u32,
     /// User supplied tag to identify this mesh instance.
     pub tag: u32,
+    /// Padding.
     pub pad: u32,
     /// AABB for decompressing positions.
     pub aabb_center: Vec3,

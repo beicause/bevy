@@ -260,16 +260,8 @@ pub struct Mesh {
     /// Does nothing if not used with `bevy_solari`, or if the mesh is not compatible
     /// with `bevy_solari` (see `bevy_solari`'s docs).
     pub enable_raytracing: bool,
-    /// Whether or not to compress vertex attributes when uploading to GPU buffer to save video memory
-    /// and bandwidth, but it will reduce precision and have some CPU processing overhead.
-    ///
-    /// If the corresponding flag is enabled:
-    /// - Position will be Snorm16x4 relative to the mesh's AABB. The w component is unused.
-    /// - Normal and tangent will be Snorm16x2 using octahedral encoding.
-    /// - UV0 and UV1 will be Unorm16x2. UVs are remapped based on their min/max values so them can go beyond [0, 1], though a larger range will reduce precision.
-    /// - Joint weight will be Unorm16x4.
-    /// - Color will be Float16x4 or Unorm8x4.
-    pub attribute_compression: MeshAttributeCompressionFlags,
+    /// Indicate whether vertex attributes are compressed.
+    attribute_compression: MeshAttributeCompressionFlags,
     /// Precomputed min and max extents of the mesh position data. Used mainly for constructing `Aabb`s for frustum culling.
     /// This data will be set if/when a mesh is extracted to the GPU
     pub final_aabb: Option<Aabb3d>,
@@ -277,6 +269,12 @@ pub struct Mesh {
 }
 
 bitflags::bitflags! {
+    /// If the corresponding attribute compression is enabled:
+    /// - Position will be Snorm16x4 relative to the mesh's AABB. The w component is unused.
+    /// - Normal and tangent will be Snorm16x2 using octahedral encoding.
+    /// - UV0 and UV1 will be Unorm16x2. UVs are remapped based on their min/max values so them can go beyond [0, 1], though a larger range will reduce precision.
+    /// - Joint weight will be Unorm16x4.
+    /// - Color will be Float16x4 or Unorm8x4.
     #[repr(transparent)]
     #[derive(Hash, Clone, Copy, PartialEq, Eq, Debug, Reflect)]
     #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
@@ -867,7 +865,6 @@ impl Mesh {
     }
 
     /// Returns the size of a vertex in bytes.
-    /// This is affected by the [`Mesh::attribute_compression`].
     ///
     /// # Panics
     /// Panics when the mesh data has already been extracted to `RenderWorld`.
@@ -876,16 +873,11 @@ impl Mesh {
             .as_ref()
             .expect(MESH_EXTRACTED_ERROR)
             .values()
-            .map(|data| {
-                self.get_compressed_vertex_format(data.attribute.id)
-                    .unwrap_or(data.attribute.format)
-                    .size()
-            })
+            .map(|data| data.attribute.format.size())
             .sum()
     }
 
     /// Returns the size required for the vertex buffer in bytes.
-    /// This is affected by the [`Mesh::attribute_compression`].
     ///
     /// # Panics
     /// Panics when the mesh data has already been extracted to `RenderWorld`.
@@ -910,7 +902,6 @@ impl Mesh {
     }
 
     /// Get this `Mesh`'s [`MeshVertexBufferLayout`], used in `SpecializedMeshPipeline`.
-    /// This is affected by the [`Mesh::attribute_compression`].
     ///
     /// # Panics
     /// Panics when the mesh data has already been extracted to `RenderWorld`.
@@ -925,15 +916,12 @@ impl Mesh {
         let mut accumulated_offset = 0;
         for (index, data) in mesh_attributes.values().enumerate() {
             attribute_ids.push(data.attribute.id);
-            let format = self
-                .get_compressed_vertex_format(data.attribute.id)
-                .unwrap_or(data.attribute.format);
             attributes.push(VertexAttribute {
                 offset: accumulated_offset,
-                format,
+                format: data.attribute.format,
                 shader_location: index as u32,
             });
-            accumulated_offset += format.size();
+            accumulated_offset += data.attribute.format.size();
         }
 
         let layout = MeshVertexBufferLayout {
@@ -1020,7 +1008,7 @@ impl Mesh {
         }
     }
 
-    /// Returns the compressed vertex format for the given attribute ID, or None if the attribute is not compressed.
+    /// Returns the compressed vertex format for the given attribute ID, or None if the compression flag is not set.
     fn get_compressed_vertex_format(
         &self,
         attribute_id: MeshVertexAttributeId,
@@ -1077,7 +1065,7 @@ impl Mesh {
                 {
                     Some(VertexFormat::Unorm8x4)
                 } else {
-                    unreachable!()
+                    unreachable!("Color compression flag must be `COMPRESS_COLOR_FLOAT16` or `COMPRESS_COLOR_UNORM8`")
                 }
             }
             id if id == Self::ATTRIBUTE_JOINT_WEIGHT.id
@@ -1091,7 +1079,7 @@ impl Mesh {
         }
     }
 
-    /// Create compressed attribute values for the given attribute ID and attribute values, or None if the attribute is not compressed or can't be compressed.
+    /// Create compressed attribute values for the given attribute ID and attribute values. Return None if the compression flag is not set or it can't be compressed.
     fn create_compressed_attribute_values(
         &self,
         attribute_id: MeshVertexAttributeId,
@@ -1103,48 +1091,42 @@ impl Mesh {
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_POSITION) =>
             {
-                Some(
-                    attribute_values.create_compressed_positions(
-                        self.final_aabb
-                            .unwrap_or_else(|| self.compute_aabb().unwrap()),
-                    ),
-                )
+                let aabb = if let Some(aabb) = self.final_aabb {
+                    aabb
+                } else {
+                    self.compute_aabb()?
+                };
+                attribute_values.create_compressed_positions(aabb)
             }
             id if id == Self::ATTRIBUTE_NORMAL.id
                 && self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_NORMAL) =>
             {
-                Some(attribute_values.create_octahedral_encode_normals())
+                attribute_values.create_octahedral_encode_normals()
             }
             id if id == Self::ATTRIBUTE_UV_0.id
                 && self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_UV0) =>
             {
-                Some(
-                    attribute_values.create_compressed_uvs(
-                        self.compute_uv_range(Mesh::ATTRIBUTE_UV_0).unwrap(),
-                    ),
-                )
+                attribute_values
+                    .create_compressed_uvs(self.compute_uv_range(Mesh::ATTRIBUTE_UV_0).unwrap())
             }
             id if id == Self::ATTRIBUTE_UV_1.id
                 && self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_UV1) =>
             {
-                Some(
-                    attribute_values.create_compressed_uvs(
-                        self.compute_uv_range(Mesh::ATTRIBUTE_UV_1).unwrap(),
-                    ),
-                )
+                attribute_values
+                    .create_compressed_uvs(self.compute_uv_range(Mesh::ATTRIBUTE_UV_1).unwrap())
             }
             id if id == Self::ATTRIBUTE_TANGENT.id
                 && self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_TANGENT) =>
             {
-                Some(attribute_values.create_octahedral_encode_tangents())
+                attribute_values.create_octahedral_encode_tangents()
             }
             id if id == Self::ATTRIBUTE_COLOR.id
                 && (self
@@ -1158,12 +1140,12 @@ impl Mesh {
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_COLOR_FLOAT16)
                 {
-                    Some(attribute_values.create_f16_values())
+                    attribute_values.create_f16_values()
                 } else {
                     // Create Unorm8x4 color
                     let VertexAttributeValues::Float32x4(uncompressed_values) = attribute_values
                     else {
-                        unreachable!()
+                        return None;
                     };
                     let mut values = Vec::<[u8; 4]>::with_capacity(uncompressed_values.len());
                     for val in uncompressed_values {
@@ -1177,10 +1159,62 @@ impl Mesh {
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_JOINT_WEIGHT) =>
             {
-                Some(attribute_values.create_unorm16_values())
+                attribute_values.create_unorm16_values()
             }
             _ => None,
         }
+    }
+
+    /// Create a [`Mesh`] with the given compression flags. See also [`MeshAttributeCompressionFlags`]
+    ///
+    /// If `index_compression` is true and vertex count <= 65565, indices will be converted to u16.
+    ///
+    /// # Panics
+    /// Panics when the mesh data has already been extracted to `RenderWorld`.
+    pub fn compressed_mesh(
+        mut self,
+        attribute_compression: MeshAttributeCompressionFlags,
+        index_compression: bool,
+    ) -> Mesh {
+        self.attribute_compression = attribute_compression;
+        for mut attr in [
+            Mesh::ATTRIBUTE_POSITION,
+            Mesh::ATTRIBUTE_NORMAL,
+            Mesh::ATTRIBUTE_UV_0,
+            Mesh::ATTRIBUTE_UV_1,
+            Mesh::ATTRIBUTE_TANGENT,
+            Mesh::ATTRIBUTE_COLOR,
+            Mesh::ATTRIBUTE_JOINT_WEIGHT,
+            Mesh::ATTRIBUTE_JOINT_INDEX,
+        ] {
+            if let Some(compressed_format) = self.get_compressed_vertex_format(attr.id)
+                && self.contains_attribute(attr.id)
+            {
+                let values = self
+                    .create_compressed_attribute_values(attr.id, self.attribute(attr.id).unwrap());
+                if let Some(values) = values {
+                    attr.format = compressed_format;
+                    if attr.id == Mesh::ATTRIBUTE_POSITION.id {
+                        // Must compute aabb before we compress positions.
+                        self.final_aabb = self.compute_aabb();
+                    }
+                    self.insert_attribute(attr, values);
+                }
+            }
+        }
+
+        if index_compression {
+            // Vertex count should be <= 65535 (max index <= 65534) because of primitive restart value.
+            if let Some(Indices::U32(indices)) = self.indices()
+                && self.count_vertices() <= 65535
+            {
+                self.insert_indices(Indices::U16(
+                    indices.iter().map(|idx| *idx as u16).collect(),
+                ));
+            }
+        }
+
+        self
     }
 
     /// Computes and returns the vertex data of the mesh as bytes.
@@ -1192,8 +1226,6 @@ impl Mesh {
     ///
     /// This is a convenience method which allocates a Vec.
     /// Prefer pre-allocating and using [`Mesh::write_packed_vertex_buffer_data`] when possible.
-    ///
-    /// This will be compressed data if [`Mesh::attribute_compression`] isn't none.
     ///
     /// # Panics
     /// Panics when the mesh data has already been extracted to `RenderWorld`.
@@ -1210,8 +1242,6 @@ impl Mesh {
     /// If the vertex attributes have different lengths, they are all truncated to
     /// the length of the smallest.
     ///
-    /// This will write compressed data if [`Mesh::attribute_compression`] isn't none.
-    ///
     /// # Panics
     /// Panics when the mesh data has already been extracted to `RenderWorld`.
     pub fn write_packed_vertex_buffer_data(&self, slice: &mut [u8]) {
@@ -1221,30 +1251,7 @@ impl Mesh {
         let vertex_count = self.count_vertices();
         // bundle into interleaved buffers
         let mut attribute_offset = 0;
-        for uncompressed_attribute_data in mesh_attributes.values() {
-            let compressed_values = self.create_compressed_attribute_values(
-                uncompressed_attribute_data.attribute.id,
-                &uncompressed_attribute_data.values,
-            );
-            let compressed_format =
-                self.get_compressed_vertex_format(uncompressed_attribute_data.attribute.id);
-            let compressed_attribute_data = if let Some(compressed_values) = compressed_values
-                && let Some(compressed_format) = compressed_format
-            {
-                Some(MeshAttributeData {
-                    attribute: MeshVertexAttribute {
-                        format: compressed_format,
-                        ..uncompressed_attribute_data.attribute
-                    },
-                    values: compressed_values,
-                })
-            } else {
-                None
-            };
-
-            let attribute_data = compressed_attribute_data
-                .as_ref()
-                .unwrap_or(uncompressed_attribute_data);
+        for attribute_data in mesh_attributes.values() {
             let attribute_size = attribute_data.attribute.format.size() as usize;
             let attributes_bytes = attribute_data.values.get_bytes();
             for (vertex_index, attribute_bytes) in attributes_bytes

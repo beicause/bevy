@@ -383,57 +383,57 @@ impl VertexAttributeValues {
         }
     }
 
-    /// Create a new `VertexAttributeValues` with the values converted from f32 to f16. Panic if the values are not Float32, Float32x2 or Float32x4.
-    pub(crate) fn create_f16_values(&self) -> VertexAttributeValues {
+    /// Create a new `VertexAttributeValues` with the values converted from f32 to f16. Return None if the values are not Float32, Float32x2 or Float32x4.
+    pub(crate) fn create_f16_values(&self) -> Option<VertexAttributeValues> {
         match &self {
             VertexAttributeValues::Float32(uncompressed_values) => {
                 let mut values = Vec::<half::f16>::with_capacity(uncompressed_values.len());
                 for value in uncompressed_values {
                     values.push(arr_f32_to_f16([*value])[0]);
                 }
-                VertexAttributeValues::Float16(values)
+                Some(VertexAttributeValues::Float16(values))
             }
             VertexAttributeValues::Float32x2(uncompressed_values) => {
                 let mut values = Vec::<[half::f16; 2]>::with_capacity(uncompressed_values.len());
                 for value in uncompressed_values {
                     values.push(arr_f32_to_f16(*value));
                 }
-                VertexAttributeValues::Float16x2(values)
+                Some(VertexAttributeValues::Float16x2(values))
             }
             VertexAttributeValues::Float32x4(uncompressed_values) => {
                 let mut values = Vec::<[half::f16; 4]>::with_capacity(uncompressed_values.len());
                 for value in uncompressed_values {
                     values.push(arr_f32_to_f16(*value));
                 }
-                VertexAttributeValues::Float16x4(values)
+                Some(VertexAttributeValues::Float16x4(values))
             }
-            _ => panic!("Unsupported vertex attribute format"),
+            _ => None,
         }
     }
 
-    /// Create a new `VertexAttributeValues` with the values converted from f32 to unorm16. Panic if the values are not Float32, Float32x2 or Float32x4.
-    pub(crate) fn create_unorm16_values(&self) -> VertexAttributeValues {
+    /// Create a new `VertexAttributeValues` with the values converted from f32 to unorm16. Return None if the values are not Float32, Float32x2 or Float32x4.
+    pub(crate) fn create_unorm16_values(&self) -> Option<VertexAttributeValues> {
         match &self {
             VertexAttributeValues::Float32x2(uncompressed_values) => {
                 let mut values = Vec::<[u16; 2]>::with_capacity(uncompressed_values.len());
                 for value in uncompressed_values {
                     values.push(arr_f32_to_unorm16(*value));
                 }
-                VertexAttributeValues::Unorm16x2(values)
+                Some(VertexAttributeValues::Unorm16x2(values))
             }
             VertexAttributeValues::Float32x4(uncompressed_values) => {
                 let mut values = Vec::<[u16; 4]>::with_capacity(uncompressed_values.len());
                 for value in uncompressed_values {
                     values.push(arr_f32_to_unorm16(*value));
                 }
-                VertexAttributeValues::Unorm16x4(values)
+                Some(VertexAttributeValues::Unorm16x4(values))
             }
-            _ => panic!("Unsupported vertex attribute format"),
+            _ => None,
         }
     }
 
-    /// Create a new `VertexAttributeValues` with Float32x3 normals converted to Snorm16x2 using octahedral encoding. Panics if the values are not Float32x3.
-    pub(crate) fn create_octahedral_encode_normals(&self) -> VertexAttributeValues {
+    /// Create a new `VertexAttributeValues` with Float32x3 normals converted to Snorm16x2 using octahedral encoding. Return None if the values are not Float32x3.
+    pub(crate) fn create_octahedral_encode_normals(&self) -> Option<VertexAttributeValues> {
         match &self {
             VertexAttributeValues::Float32x3(uncompressed_values) => {
                 let mut values = Vec::<[i16; 2]>::with_capacity(uncompressed_values.len());
@@ -441,14 +441,14 @@ impl VertexAttributeValues {
                     let encoded = octahedral_encode_signed(Vec3::from_array(*value).normalize());
                     values.push(arr_f32_to_snorm16(encoded.to_array()));
                 }
-                VertexAttributeValues::Snorm16x2(values)
+                Some(VertexAttributeValues::Snorm16x2(values))
             }
-            _ => panic!("Unsupported vertex attribute format"),
+            _ => None,
         }
     }
 
-    /// Create a new `VertexAttributeValues` with Float32x4 tangents converted to Snorm16x2 using octahedral encoding. Panics if the values are not Float32x4.
-    pub(crate) fn create_octahedral_encode_tangents(&self) -> VertexAttributeValues {
+    /// Create a new `VertexAttributeValues` with Float32x4 tangents converted to Snorm16x2 using octahedral encoding. Return None if the values are not Float32x4.
+    pub(crate) fn create_octahedral_encode_tangents(&self) -> Option<VertexAttributeValues> {
         match &self {
             VertexAttributeValues::Float32x4(uncompressed_values) => {
                 let mut values = Vec::<[i16; 2]>::with_capacity(uncompressed_values.len());
@@ -459,16 +459,19 @@ impl VertexAttributeValues {
                     );
                     values.push(arr_f32_to_snorm16(encoded.to_array()));
                 }
-                VertexAttributeValues::Snorm16x2(values)
+                Some(VertexAttributeValues::Snorm16x2(values))
             }
-            _ => panic!("Unsupported vertex attribute format"),
+            _ => None,
         }
     }
 
-    pub(crate) fn create_compressed_positions(&self, aabb: Aabb3d) -> VertexAttributeValues {
+    pub(crate) fn create_compressed_positions(
+        &self,
+        aabb: Aabb3d,
+    ) -> Option<VertexAttributeValues> {
         // Create Snorm16x4 position
         let VertexAttributeValues::Float32x3(uncompressed_values) = self else {
-            unreachable!()
+            return None;
         };
         let mut values = Vec::<[i16; 4]>::with_capacity(uncompressed_values.len());
         let scale = 1.0 / aabb.half_size();
@@ -479,13 +482,13 @@ impl VertexAttributeValues {
             let val = arr_f32_to_snorm16(val.extend(0.0).to_array());
             values.push(val);
         }
-        VertexAttributeValues::Snorm16x4(values)
+        Some(VertexAttributeValues::Snorm16x4(values))
     }
 
-    pub(crate) fn create_compressed_uvs(&self, range: Aabb2d) -> VertexAttributeValues {
+    pub(crate) fn create_compressed_uvs(&self, range: Aabb2d) -> Option<VertexAttributeValues> {
         // Create Unorm16x2 UVs
         let VertexAttributeValues::Float32x2(uncompressed_values) = self else {
-            unreachable!()
+            return None;
         };
         let mut values = Vec::<[u16; 2]>::with_capacity(uncompressed_values.len());
         let scale = 1.0 / (range.max - range.min);
@@ -495,7 +498,7 @@ impl VertexAttributeValues {
             val = (val - range.min) * scale;
             values.push(arr_f32_to_unorm16(val.to_array()));
         }
-        VertexAttributeValues::Unorm16x2(values)
+        Some(VertexAttributeValues::Unorm16x2(values))
     }
 }
 
