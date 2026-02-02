@@ -723,14 +723,6 @@ impl GltfLoader {
                 let primitive_topology = primitive_topology(primitive.mode())?;
 
                 let mut mesh = Mesh::new(primitive_topology, settings.load_meshes);
-                mesh = mesh.compressed_mesh(
-                    settings
-                        .mesh_attribute_compression
-                        .unwrap_or(loader.default_mesh_attribute_compression),
-                    settings
-                        .mesh_index_compression
-                        .unwrap_or(loader.default_mesh_index_compression),
-                );
                 // Read vertex attributes
                 for (semantic, accessor) in primitive.attributes() {
                     if [Semantic::Joints(0), Semantic::Weights(0)].contains(&semantic) {
@@ -846,7 +838,17 @@ impl GltfLoader {
                     warn!("Failed to generate skinned mesh bounds: {err}");
                 }
 
-                let mesh_handle = load_context.add_labeled_asset(primitive_label.to_string(), mesh);
+                let mesh_handle = load_context.add_labeled_asset(
+                    primitive_label.to_string(),
+                    mesh.compressed_mesh(
+                        settings
+                            .mesh_attribute_compression
+                            .unwrap_or(loader.default_mesh_attribute_compression),
+                        settings
+                            .mesh_index_compression
+                            .unwrap_or(loader.default_mesh_index_compression),
+                    ),
+                );
                 primitives.push(super::GltfPrimitive::new(
                     &gltf_mesh,
                     &primitive,
