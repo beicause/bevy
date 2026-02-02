@@ -1013,44 +1013,51 @@ impl Mesh {
         &self,
         attribute_id: MeshVertexAttributeId,
     ) -> Option<VertexFormat> {
+        const ATTRIBUTE_POSITION_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_POSITION.id;
+        const ATTRIBUTE_NORMAL_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_NORMAL.id;
+        const ATTRIBUTE_UV_0_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_UV_0.id;
+        const ATTRIBUTE_UV_1_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_UV_1.id;
+        const ATTRIBUTE_TANGENT_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_TANGENT.id;
+        const ATTRIBUTE_COLOR_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_COLOR.id;
+        const ATTRIBUTE_JOINT_WEIGHT_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_JOINT_WEIGHT.id;
         match attribute_id {
-            id if id == Self::ATTRIBUTE_POSITION.id
-                && self
+            ATTRIBUTE_POSITION_ID
+                if self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_POSITION) =>
             {
                 Some(VertexFormat::Snorm16x4)
             }
-            id if id == Self::ATTRIBUTE_NORMAL.id
-                && self
+            ATTRIBUTE_NORMAL_ID
+                if self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_NORMAL) =>
             {
                 Some(VertexFormat::Snorm16x2)
             }
-            id if id == Self::ATTRIBUTE_UV_0.id
-                && self
+            ATTRIBUTE_UV_0_ID
+                if self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_UV0) =>
             {
                 Some(VertexFormat::Unorm16x2)
             }
-            id if id == Self::ATTRIBUTE_UV_1.id
-                && self
+            ATTRIBUTE_UV_1_ID
+                if self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_UV1) =>
             {
                 Some(VertexFormat::Unorm16x2)
             }
-            id if id == Self::ATTRIBUTE_TANGENT.id
-                && self
+            ATTRIBUTE_TANGENT_ID
+                if self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_TANGENT) =>
             {
                 Some(VertexFormat::Snorm16x2)
             }
-            id if id == Self::ATTRIBUTE_COLOR.id
-                && self
+            ATTRIBUTE_COLOR_ID
+                if self
                     .attribute_compression
                     .intersects(MeshAttributeCompressionFlags::COMPRESS_COLOR_RESERVED_BIT) =>
             {
@@ -1068,8 +1075,8 @@ impl Mesh {
                     unreachable!("Color compression flag must be `COMPRESS_COLOR_FLOAT16` or `COMPRESS_COLOR_UNORM8`")
                 }
             }
-            id if id == Self::ATTRIBUTE_JOINT_WEIGHT.id
-                && self
+            ATTRIBUTE_JOINT_WEIGHT_ID
+                if self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_JOINT_WEIGHT) =>
             {
@@ -1085,9 +1092,16 @@ impl Mesh {
         attribute_id: MeshVertexAttributeId,
         attribute_values: &VertexAttributeValues,
     ) -> Option<VertexAttributeValues> {
+        const ATTRIBUTE_POSITION_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_POSITION.id;
+        const ATTRIBUTE_NORMAL_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_NORMAL.id;
+        const ATTRIBUTE_UV_0_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_UV_0.id;
+        const ATTRIBUTE_UV_1_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_UV_1.id;
+        const ATTRIBUTE_TANGENT_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_TANGENT.id;
+        const ATTRIBUTE_COLOR_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_COLOR.id;
+        const ATTRIBUTE_JOINT_WEIGHT_ID: MeshVertexAttributeId = Mesh::ATTRIBUTE_JOINT_WEIGHT.id;
         match attribute_id {
-            id if id == Self::ATTRIBUTE_POSITION.id
-                && self
+            ATTRIBUTE_POSITION_ID
+                if self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_POSITION) =>
             {
@@ -1098,50 +1112,50 @@ impl Mesh {
                 };
                 attribute_values.create_compressed_positions(aabb)
             }
-            id if id == Self::ATTRIBUTE_NORMAL.id
-                && self
+            ATTRIBUTE_NORMAL_ID
+                if self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_NORMAL) =>
             {
                 attribute_values.create_octahedral_encode_normals()
             }
-            id if id == Self::ATTRIBUTE_UV_0.id
-                && self
+            ATTRIBUTE_UV_0_ID
+                if self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_UV0) =>
             {
                 attribute_values
                     .create_compressed_uvs(self.compute_uv_range(Mesh::ATTRIBUTE_UV_0).unwrap())
             }
-            id if id == Self::ATTRIBUTE_UV_1.id
-                && self
+            ATTRIBUTE_UV_1_ID
+                if self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_UV1) =>
             {
                 attribute_values
                     .create_compressed_uvs(self.compute_uv_range(Mesh::ATTRIBUTE_UV_1).unwrap())
             }
-            id if id == Self::ATTRIBUTE_TANGENT.id
-                && self
+            ATTRIBUTE_TANGENT_ID
+                if self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_TANGENT) =>
             {
                 attribute_values.create_octahedral_encode_tangents()
             }
-            id if id == Self::ATTRIBUTE_COLOR.id
-                && (self
+            ATTRIBUTE_COLOR_ID
+                if self
                     .attribute_compression
-                    .contains(MeshAttributeCompressionFlags::COMPRESS_COLOR_UNORM8)
-                    || self
-                        .attribute_compression
-                        .contains(MeshAttributeCompressionFlags::COMPRESS_COLOR_FLOAT16)) =>
+                    .intersects(MeshAttributeCompressionFlags::COMPRESS_COLOR_RESERVED_BIT) =>
             {
                 if self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_COLOR_FLOAT16)
                 {
                     attribute_values.create_f16_values()
-                } else {
+                } else if self
+                    .attribute_compression
+                    .contains(MeshAttributeCompressionFlags::COMPRESS_COLOR_UNORM8)
+                {
                     // Create Unorm8x4 color
                     let VertexAttributeValues::Float32x4(uncompressed_values) = attribute_values
                     else {
@@ -1152,10 +1166,12 @@ impl Mesh {
                         values.push(arr_f32_to_unorm8(*val));
                     }
                     Some(VertexAttributeValues::Unorm8x4(values))
+                } else {
+                    unreachable!("Color compression flag must be `COMPRESS_COLOR_FLOAT16` or `COMPRESS_COLOR_UNORM8`")
                 }
             }
-            id if id == Self::ATTRIBUTE_JOINT_WEIGHT.id
-                && self
+            ATTRIBUTE_JOINT_WEIGHT_ID
+                if self
                     .attribute_compression
                     .contains(MeshAttributeCompressionFlags::COMPRESS_JOINT_WEIGHT) =>
             {
@@ -1196,7 +1212,6 @@ impl Mesh {
             Mesh::ATTRIBUTE_TANGENT,
             Mesh::ATTRIBUTE_COLOR,
             Mesh::ATTRIBUTE_JOINT_WEIGHT,
-            Mesh::ATTRIBUTE_JOINT_INDEX,
         ] {
             if let Some(compressed_format) = self.get_compressed_vertex_format(attr.id)
                 && self.contains_attribute(attr.id)
