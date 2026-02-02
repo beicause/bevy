@@ -1168,7 +1168,7 @@ impl Mesh {
     /// Create a [`Mesh`] with the given compression flags.
     ///
     /// See [`MeshAttributeCompressionFlags`] for more context.
-    /// if vertex attrubutes are already compressed, they are unchanged and won't decompress.
+    /// if vertex attributes are already compressed, they are unchanged and won't decompress.
     ///
     /// If `index_compression` is true and indices are u32 and vertex count <= 65535, indices will be converted to u16, otherwise it does nothing.
     ///
