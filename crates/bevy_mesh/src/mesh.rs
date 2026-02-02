@@ -271,7 +271,7 @@ pub struct Mesh {
 bitflags::bitflags! {
     /// If the corresponding attribute compression is enabled:
     /// - Position will be Snorm16x4 relative to the mesh's AABB. The w component is unused.
-    /// - Normal and tangent will be Snorm16x2 using octahedral encoding.
+    /// - Normal and tangent will be Snorm16x2 with octahedral encoding, using [`octahedral_encode_signed`](crate::vertex::octahedral_encode_signed) and [`octahedral_encode_tangent`](crate::vertex::octahedral_encode_tangent).
     /// - UV0 and UV1 will be Unorm16x2. UVs are remapped based on their min/max values so them can go beyond [0, 1], though a larger range will reduce precision.
     /// - Joint weight will be Unorm16x4.
     /// - Color will be Float16x4 or Unorm8x4.
@@ -1165,9 +1165,12 @@ impl Mesh {
         }
     }
 
-    /// Create a [`Mesh`] with the given compression flags. See also [`MeshAttributeCompressionFlags`]
+    /// Create a [`Mesh`] with the given compression flags.
     ///
-    /// If `index_compression` is true and vertex count <= 65565, indices will be converted to u16.
+    /// See [`MeshAttributeCompressionFlags`] for more context.
+    /// if vertex attrubutes are already compressed, the behavior of `attribute_compression` is bitwise OR, which means it doesn't decompress.
+    ///
+    /// If `index_compression` is true and indices are u32 and vertex count <= 65535, indices will be converted to u16, otherwise it does nothing.
     ///
     /// # Panics
     /// Panics when the mesh data has already been extracted to `RenderWorld`.
@@ -1176,7 +1179,7 @@ impl Mesh {
         attribute_compression: MeshAttributeCompressionFlags,
         index_compression: bool,
     ) -> Mesh {
-        self.attribute_compression = attribute_compression;
+        self.attribute_compression |= attribute_compression;
         for mut attr in [
             Mesh::ATTRIBUTE_POSITION,
             Mesh::ATTRIBUTE_NORMAL,
@@ -1204,7 +1207,7 @@ impl Mesh {
         }
 
         if index_compression {
-            // Vertex count should be <= 65535 (max index <= 65534) because of primitive restart value.
+            // Vertex count should be <= 65535 (max index <= 65534), not 65536 because of primitive restart value.
             if let Some(Indices::U32(indices)) = self.indices()
                 && self.count_vertices() <= 65535
             {

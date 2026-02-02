@@ -653,8 +653,8 @@ pub(crate) fn arr_f32_to_f16<const N: usize>(value: [f32; N]) -> [half::f16; N] 
     value.map(half::f16::from_f32)
 }
 
-/// Encode normals or unit direction vectors as octahedral coordinates with range [-1, 1].
-fn octahedral_encode_signed(v: Vec3) -> Vec2 {
+/// Encode normals or unit direction vectors as octahedral coordinates with range [-1, 1]. Use [`octahedral_decode_signed`] to decode.
+pub fn octahedral_encode_signed(v: Vec3) -> Vec2 {
     let n = v / (v.x.abs() + v.y.abs() + v.z.abs());
     let octahedral_wrap = (1.0 - n.yx().abs())
         * Vec2::select(
@@ -669,8 +669,8 @@ fn octahedral_encode_signed(v: Vec3) -> Vec2 {
     }
 }
 
-/// Encode tangent vectors as octahedral coordinates with range [-1, 1]. The sign is encoded in y component.
-fn octahedral_encode_tangent(v: Vec3, sign: f32) -> Vec2 {
+/// Encode tangent vectors as octahedral coordinates with range [-1, 1]. The sign is encoded in y component. Use [`octahedral_decode_tangent`] to decode.
+pub fn octahedral_encode_tangent(v: Vec3, sign: f32) -> Vec2 {
     // Bias to ensure that encoding as unorm16 preserves the sign. See https://github.com/godotengine/godot/pull/73265
     let bias = 1.0 / 32767.0;
     let mut n_xy = octahedral_encode_signed(v);
@@ -682,29 +682,32 @@ fn octahedral_encode_tangent(v: Vec3, sign: f32) -> Vec2 {
     n_xy
 }
 
+/// Decode octahedral coordinates to normals or unit direction vectors. Input is [-1, 1].
+pub fn octahedral_decode_signed(v: Vec2) -> Vec3 {
+    let mut n = Vec3::new(v.x, v.y, 1.0 - v.x.abs() - v.y.abs());
+    let t = (-n.z).clamp(0.0, 1.0);
+    let w = Vec2::select(n.xy().cmpge(vec2(0.0, 0.0)), vec2(-t, -t), vec2(t, t));
+    n = Vec3::new(n.x + w.x, n.y + w.y, n.z);
+    n.normalize()
+}
+
+/// Decode tangent vectors from octahedral coordinates and return the sign. Input is [-1, 1]. The y component should have been mapped to always be positive and then encoded the sign.
+pub fn octahedral_decode_tangent(v: Vec2) -> (Vec3, f32) {
+    let sign = if v.y >= 0.0 { 1.0 } else { -1.0 };
+    let mut f = v;
+    f.y = f.y.abs();
+    f.y = f.y * 2.0 - 1.0;
+    (octahedral_decode_signed(f), sign)
+}
+
 #[cfg(test)]
 mod tests {
-    use bevy_math::{vec2, vec3, Vec2, Vec3, Vec3Swizzles as _, Vec4Swizzles};
+    use bevy_math::{vec2, vec3, Vec4Swizzles};
 
-    use crate::vertex::{octahedral_encode_signed, octahedral_encode_tangent};
-
-    /// Decode tangent vectors from octahedral coordinates and return the sign. Input is [-1, 1]. The y component should have been mapped to always be positive and then encoded the sign.
-    fn octahedral_decode_tangent(v: Vec2) -> (Vec3, f32) {
-        let sign = if v.y >= 0.0 { 1.0 } else { -1.0 };
-        let mut f = v;
-        f.y = f.y.abs();
-        f.y = f.y * 2.0 - 1.0;
-        (octahedral_decode_signed(f), sign)
-    }
-
-    /// Decode octahedral coordinates to normals or unit direction vectors. Input is [-1, 1].
-    fn octahedral_decode_signed(v: Vec2) -> Vec3 {
-        let mut n = vec3(v.x, v.y, 1.0 - v.x.abs() - v.y.abs());
-        let t = (-n.z).clamp(0.0, 1.0);
-        let w = Vec2::select(n.xy().cmpge(vec2(0.0, 0.0)), vec2(-t, -t), vec2(t, t));
-        n = vec3(n.x + w.x, n.y + w.y, n.z);
-        n.normalize()
-    }
+    use crate::{
+        octahedral_decode_signed, octahedral_decode_tangent,
+        vertex::{octahedral_encode_signed, octahedral_encode_tangent},
+    };
 
     #[test]
     fn octahedral_encode_decode() {
