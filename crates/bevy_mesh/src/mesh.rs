@@ -2881,11 +2881,11 @@ mod tests {
     #[cfg(feature = "serialize")]
     use super::SerializedMesh;
     use crate::mesh::{Indices, MeshWindingInvertError, VertexAttributeValues};
-    use crate::PrimitiveTopology;
+    use crate::{MeshAttributeCompressionFlags, MeshVertexAttribute, PrimitiveTopology};
     use bevy_asset::RenderAssetUsages;
     use bevy_math::bounding::Aabb3d;
     use bevy_math::primitives::Triangle3d;
-    use bevy_math::Vec3;
+    use bevy_math::{Vec3, Vec3A};
     use bevy_transform::components::Transform;
 
     #[test]
@@ -3282,5 +3282,164 @@ mod tests {
             serde_json::from_str(&serialized_string).unwrap();
         let deserialized_mesh = serialized_mesh_from_string.into_mesh();
         assert_eq!(mesh, deserialized_mesh);
+    }
+
+    #[test]
+    fn compress_mesh() {
+        let custom_attr = MeshVertexAttribute::new(
+            "custom_attr",
+            Mesh::FIRST_AVAILABLE_CUSTOM_ATTRIBUTE,
+            wgpu_types::VertexFormat::Uint32,
+        );
+        let mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(
+            Mesh::ATTRIBUTE_POSITION,
+            vec![
+                [0.0, 1.0, -1.0],
+                [1.0, -0.5, -1.0],
+                [-1.0, -0.5, -1.0],
+                [0.0, -0.5, 1.0],
+            ],
+        )
+        .with_inserted_attribute(
+            Mesh::ATTRIBUTE_NORMAL,
+            vec![
+                Vec3::new(0.0, 1.0, -1.0).normalize().to_array(),
+                Vec3::new(1.0, 0.0, -1.0).normalize().to_array(),
+                Vec3::new(-1.0, 0.0, -1.0).normalize().to_array(),
+                [0.0, 0.0, 1.0],
+            ],
+        )
+        .with_inserted_attribute(
+            Mesh::ATTRIBUTE_TANGENT,
+            vec![
+                Vec3::new(0.0, 1.0, 1.0).normalize().extend(1.0).to_array(),
+                Vec3::new(1.0, 0.0, 1.0).normalize().extend(1.0).to_array(),
+                Vec3::new(-1.0, 0.0, 1.0).normalize().extend(1.0).to_array(),
+                [1.0, 0.0, 0.0, 1.0],
+            ],
+        )
+        .with_inserted_attribute(
+            Mesh::ATTRIBUTE_UV_0,
+            vec![[0.126, 0.497], [0.126, 1.0], [0.05, 0.0], [0.0, 0.5]],
+        )
+        .with_inserted_attribute(
+            Mesh::ATTRIBUTE_COLOR,
+            vec![
+                [0.05, 1.0, 0.15, 1.0],
+                [0.75, 0.07, 1.0, 1.0],
+                [0.04, 0.11, 1.0, 1.0],
+                [1.0, 0.11, 0.13, 1.0],
+            ],
+        )
+        .with_inserted_attribute(
+            Mesh::ATTRIBUTE_JOINT_WEIGHT,
+            vec![
+                [0.024, 0.0, 0.0, 0.0],
+                [0.007, 0.0, 0.0, 0.0],
+                [0.008, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0],
+            ],
+        )
+        .with_inserted_attribute(
+            Mesh::ATTRIBUTE_JOINT_INDEX,
+            VertexAttributeValues::Uint16x4(vec![
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+            ]),
+        )
+        .with_inserted_attribute(custom_attr, VertexAttributeValues::Uint32(vec![0, 1, 2, 3]))
+        .with_inserted_indices(Indices::U32(vec![0, 1, 2, 0, 3, 1, 0, 2, 3, 1, 3, 2]));
+
+        let mesh_compressed_all = mesh.clone().compressed_mesh(
+            MeshAttributeCompressionFlags::all()
+                & !MeshAttributeCompressionFlags::COMPRESS_COLOR_RESERVED_BIT
+                | MeshAttributeCompressionFlags::COMPRESS_COLOR_UNORM8,
+            true,
+        );
+        assert_eq!(
+            mesh_compressed_all.final_aabb,
+            Some(Aabb3d::from_min_max(
+                Vec3A::new(-1.0, -0.5, -1.0),
+                Vec3A::new(1.0, 1.0, 1.0)
+            ))
+        );
+        assert_eq!(
+            mesh_compressed_all.attribute(Mesh::ATTRIBUTE_POSITION),
+            Some(&VertexAttributeValues::Snorm16x4(vec![
+                [0, 32767, -32767, 0],
+                [32767, -32767, -32767, 0],
+                [-32767, -32767, -32767, 0],
+                [0, -32767, 32767, 0],
+            ]))
+        );
+        assert_eq!(
+            mesh_compressed_all.attribute(Mesh::ATTRIBUTE_NORMAL),
+            Some(&VertexAttributeValues::Snorm16x2(vec![
+                [-16384, 32767],
+                [32767, -16384],
+                [-32767, -16384],
+                [0, 0],
+            ]))
+        );
+        assert_eq!(
+            mesh_compressed_all.attribute(Mesh::ATTRIBUTE_TANGENT),
+            Some(&VertexAttributeValues::Snorm16x2(vec![
+                [0, 24575],
+                [16384, 16384],
+                [-16384, 16384],
+                [32767, 16384],
+            ]))
+        );
+        assert_eq!(
+            mesh_compressed_all.attribute(Mesh::ATTRIBUTE_UV_0),
+            Some(&VertexAttributeValues::Unorm16x2(vec![
+                [65535, 32571],
+                [65535, 65535],
+                [26006, 0],
+                [0, 32768],
+            ]))
+        );
+        assert_eq!(
+            mesh_compressed_all.attribute(Mesh::ATTRIBUTE_COLOR),
+            Some(&VertexAttributeValues::Unorm8x4(vec![
+                [13, 255, 38, 255],
+                [191, 18, 255, 255],
+                [10, 28, 255, 255],
+                [255, 28, 33, 255],
+            ]))
+        );
+        assert_eq!(
+            mesh_compressed_all.indices(),
+            Some(&Indices::U16(vec![0, 1, 2, 0, 3, 1, 0, 2, 3, 1, 3, 2]))
+        );
+        assert_eq!(
+            mesh_compressed_all.attribute(custom_attr),
+            Some(&VertexAttributeValues::Uint32(vec![0, 1, 2, 3]))
+        );
+        let mesh_compressed_color_f16 = mesh
+            .clone()
+            .compressed_mesh(MeshAttributeCompressionFlags::COMPRESS_COLOR_FLOAT16, false);
+        assert!(mesh
+            .attributes()
+            .filter(|(attr, _values)| attr.id != Mesh::ATTRIBUTE_COLOR.id)
+            .eq(mesh_compressed_color_f16
+                .attributes()
+                .filter(|(attr, _values)| attr.id != Mesh::ATTRIBUTE_COLOR.id)));
+        assert_eq!(mesh.indices(), mesh_compressed_color_f16.indices());
+        assert_eq!(
+            mesh_compressed_color_f16.attribute(Mesh::ATTRIBUTE_COLOR),
+            Some(&VertexAttributeValues::Float16x4(vec![
+                [0.049987793, 1.0, 0.15002441, 1.0].map(half::f16::from_f32),
+                [0.75, 0.070007324, 1.0, 1.0].map(half::f16::from_f32),
+                [0.040008545, 0.10998535, 1.0, 1.0].map(half::f16::from_f32),
+                [1.0, 0.10998535, 0.13000488, 1.0].map(half::f16::from_f32)
+            ]))
+        );
     }
 }
