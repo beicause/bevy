@@ -243,7 +243,7 @@ pub enum VertexAttributeValues {
     /// Four unsigned bytes (u8). `vec4<u32>` in shaders.
     Uint8x4(Vec<[u8; 4]>),
     /// One signed byte (i8). `i32` in shaders.
-    Sint8(Vec<[i8; 4]>),
+    Sint8(Vec<i8>),
     /// Two signed bytes (i8). `vec2<i32>` in shaders.
     Sint8x2(Vec<[i8; 2]>),
     /// Four signed bytes (i8). `vec4<i32>` in shaders.
