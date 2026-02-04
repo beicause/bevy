@@ -18,7 +18,7 @@ use bevy_ecs::{
     query::{QueryItem, With},
     reflect::ReflectComponent,
     schedule::IntoScheduleConfigs,
-    system::Res,
+    system::{Query, Res},
 };
 use bevy_reflect::{std_traits::ReflectDefault, Reflect};
 use bevy_render::{
@@ -28,11 +28,11 @@ use bevy_render::{
     },
     globals::GlobalsBuffer,
     render_resource::{
-        BindGroupEntries, Operations, PipelineCache, RenderPassColorAttachment,
-        RenderPassDescriptor, ShaderType, SpecializedRenderPipelines,
+        BindGroupEntries, LoadOp, Operations, PipelineCache, RenderPassColorAttachment,
+        RenderPassDescriptor, ShaderType, SpecializedRenderPipelines, StoreOp, TextureUsages,
     },
     renderer::{RenderContext, ViewQuery},
-    view::{Msaa, ViewTarget},
+    view::{prepare_view_targets, Msaa, ViewDepthTexture, ViewTarget},
     Render, RenderApp, RenderStartup, RenderSystems,
 };
 
@@ -259,7 +259,6 @@ pub fn motion_blur(
 
     pass_span.end(&mut render_pass);
 }
-
 
 fn prepare_view_depth_texture_usages_for_motion_blur(
     mut view_targets: Query<&mut Camera3d, With<MotionBlurUniform>>,
