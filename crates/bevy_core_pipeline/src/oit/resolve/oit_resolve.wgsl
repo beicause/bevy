@@ -1,5 +1,8 @@
+// Reference:
+// Order-independent transparency with per-pixel ordered linked lists - https://github.com/KhronosGroup/Vulkan-Samples/blob/main/shaders/oit_linked_lists/combine.frag
+
 #import bevy_render::view::View
-#import bevy_pbr::mesh_view_types::{OitFragmentNode, OrderIndependentTransparencySettings}
+#import bevy_pbr::mesh_view_types::OitFragmentNode
 
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var<storage, read> nodes: array<OitFragmentNode>;
@@ -144,4 +147,3 @@ fn blend(color_a: vec4<f32>, color_b: vec4<f32>) -> vec4<f32> {
 fn packed_depth_alpha_get_alpha(packed: u32) -> f32 {
     return bevy_core_pipeline::oit::unpack_24bit_depth_8bit_alpha(packed).y;
 }
-

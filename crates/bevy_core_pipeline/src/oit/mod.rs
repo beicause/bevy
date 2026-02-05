@@ -147,10 +147,10 @@ pub struct OitFragmentNode {
 #[derive(Resource)]
 pub struct OitBuffers {
     pub settings: DynamicUniformBuffer<OrderIndependentTransparencySettings>,
-    /// The OIT buffers containing color, depth and linked next node for each fragments.
-    /// This is essentially used as a 3d array where xy is the screen coordinate and z is
-    /// the list of fragments rendered with OIT.
+    /// OIT nodes buffer contains color, depth and linked next node for each fragments.
     pub nodes: UninitBufferVec<OitFragmentNode>,
+    /// OIT heads buffer contains the head that pointers nodes buffer, essentially used as a 2d array where xy is the screen coordinate.
+    /// We don't use storage texture as it requires native only [`bevy_render::settings::WgpuFeatures::TEXTURE_ATOMIC`].
     pub heads: UninitBufferVec<u32>,
     pub atomic_counter: UninitBufferVec<u32>,
 }

@@ -779,10 +779,10 @@ pub fn prepare_mesh_view_bind_groups(
                 )
             {
                 entries = entries.extend_with_indices((
-                    (27, oit_settings_binding.clone()),
-                    (28, oit_nodes.clone()),
-                    (29, oit_heads.clone()),
-                    (30, oit_atomic_counter.clone()),
+                    (27, oit_settings_binding),
+                    (28, oit_nodes),
+                    (29, oit_heads),
+                    (30, oit_atomic_counter),
                 ));
             }
 

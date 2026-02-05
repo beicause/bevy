@@ -253,7 +253,12 @@ pub fn prepare_oit_resolve_bind_group(
     pipeline_cache: Res<PipelineCache>,
     buffers: Res<OitBuffers>,
 ) {
-    if let (Some(binding), Some(nodes_binding), Some(heads_binding), Some(atomic_counter_binding)) = (
+    if let (
+        Some(view_binding),
+        Some(nodes_binding),
+        Some(heads_binding),
+        Some(atomic_counter_binding),
+    ) = (
         view_uniforms.uniforms.binding(),
         buffers.nodes.binding(),
         buffers.heads.binding(),
@@ -263,7 +268,7 @@ pub fn prepare_oit_resolve_bind_group(
             "oit_resolve_bind_group",
             &pipeline_cache.get_bind_group_layout(&resolve_pipeline.view_bind_group_layout),
             &BindGroupEntries::sequential((
-                binding.clone(),
+                view_binding,
                 nodes_binding,
                 heads_binding,
                 atomic_counter_binding,
