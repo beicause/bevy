@@ -157,6 +157,25 @@ pub struct OitBuffers {
     pub atomic_counter: UninitBufferVec<u32>,
 }
 
+impl OitBuffers {
+    fn create_nodes_buffer(
+        size: usize,
+        render_device: &RenderDevice,
+    ) -> UninitBufferVec<OitFragmentNode> {
+        let mut nodes = UninitBufferVec::new(BufferUsages::COPY_DST | BufferUsages::STORAGE);
+        nodes.set_label(Some("oit_nodes"));
+        nodes.reserve(size, &render_device);
+        nodes
+    }
+
+    fn create_heads_buffer(size: usize, render_device: &RenderDevice) -> UninitBufferVec<u32> {
+        let mut nodes = UninitBufferVec::new(BufferUsages::COPY_DST | BufferUsages::STORAGE);
+        nodes.set_label(Some("oit_heads"));
+        nodes.reserve(size, &render_device);
+        nodes
+    }
+}
+
 pub fn init_oit_buffers(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
@@ -169,13 +188,9 @@ pub fn init_oit_buffers(
     nodes_capacity.set(1);
     nodes_capacity.write_buffer(&render_device, &render_queue);
 
-    let mut nodes = UninitBufferVec::new(BufferUsages::COPY_DST | BufferUsages::STORAGE);
-    nodes.set_label(Some("oit_nodes"));
-    nodes.reserve(1, &render_device);
+    let nodes = OitBuffers::create_nodes_buffer(1, &render_device);
 
-    let mut heads = UninitBufferVec::new(BufferUsages::COPY_DST | BufferUsages::STORAGE);
-    heads.set_label(Some("oit_heads"));
-    heads.reserve(1, &render_device);
+    let heads = OitBuffers::create_heads_buffer(1, &render_device);
 
     let mut atomic_counter = UninitBufferVec::new(BufferUsages::COPY_DST | BufferUsages::STORAGE);
     atomic_counter.set_label(Some("oit_atomic_counter"));
@@ -222,15 +237,8 @@ pub fn prepare_oit_buffers(
     if camera_count == 0 {
         if buffers.nodes_capacity.get() > &1 {
             // Release oit buffers if no camera enables OIT.
-            let mut nodes = UninitBufferVec::new(BufferUsages::COPY_DST | BufferUsages::STORAGE);
-            nodes.set_label(Some("oit_nodes"));
-            nodes.reserve(1, &render_device);
-            let mut heads = UninitBufferVec::new(BufferUsages::COPY_DST | BufferUsages::STORAGE);
-            heads.set_label(Some("oit_heads"));
-            heads.reserve(1, &render_device);
-
-            buffers.nodes = nodes;
-            buffers.heads = heads;
+            buffers.nodes = OitBuffers::create_nodes_buffer(1, &render_device);
+            buffers.heads = OitBuffers::create_heads_buffer(1, &render_device);
             buffers.nodes_capacity.set(1);
             buffers
                 .nodes_capacity
@@ -253,25 +261,25 @@ pub fn prepare_oit_buffers(
 
     // Create or update the heads buffer based on the max size
     let heads_size = (max_size.x * max_size.y) as usize;
-    if buffers.heads.capacity() < heads_size {
+    if buffers.heads.capacity() != heads_size {
         let start = Instant::now();
-        buffers.heads.reserve(heads_size, &render_device);
+        buffers.heads = OitBuffers::create_heads_buffer(heads_size, &render_device);
         trace!(
             "OIT heads buffer updated in {:.01}ms with total size {} MiB",
             start.elapsed().as_millis(),
-            buffers.heads.capacity() * size_of::<u32>() / 1024 / 1024,
+            (buffers.heads.capacity() * size_of::<u32>()) as f32 / 1024.0 / 1024.0,
         );
     }
 
     // Create or update the nodes buffer based on the max size
     let nodes_size = ((max_size.x * max_size.y) as f32 * fragments_per_pixel_average) as usize;
-    if buffers.nodes.capacity() < nodes_size {
+    if buffers.nodes.capacity() != nodes_size {
         let start = Instant::now();
-        buffers.nodes.reserve(nodes_size, &render_device);
+        buffers.nodes = OitBuffers::create_nodes_buffer(nodes_size, &render_device);
         trace!(
             "OIT nodes buffer updated in {:.01}ms with total size {} MiB",
             start.elapsed().as_millis(),
-            buffers.nodes.capacity() * size_of::<OitFragmentNode>() / 1024 / 1024,
+            (buffers.nodes.capacity() * size_of::<OitFragmentNode>()) as f32 / 1024.0 / 1024.0,
         );
     }
 
