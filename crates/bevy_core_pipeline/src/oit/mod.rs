@@ -212,9 +212,33 @@ pub fn prepare_oit_buffers(
             Changed<OrderIndependentTransparencySettings>,
         ),
     >,
-    camera_oit_uniforms: Query<(Entity, &OrderIndependentTransparencySettings)>,
+    camera_oit_uniforms: Query<
+        (Entity, &OrderIndependentTransparencySettings),
+        With<ExtractedCamera>,
+    >,
     mut buffers: ResMut<OitBuffers>,
 ) {
+    let camera_count = camera_oit_uniforms.count();
+    if camera_count == 0 {
+        if buffers.nodes_capacity.get() > &1 {
+            // Release oit buffers if no camera enables OIT.
+            let mut nodes = UninitBufferVec::new(BufferUsages::COPY_DST | BufferUsages::STORAGE);
+            nodes.set_label(Some("oit_nodes"));
+            nodes.reserve(1, &render_device);
+            let mut heads = UninitBufferVec::new(BufferUsages::COPY_DST | BufferUsages::STORAGE);
+            heads.set_label(Some("oit_heads"));
+            heads.reserve(1, &render_device);
+
+            buffers.nodes = nodes;
+            buffers.heads = heads;
+            buffers.nodes_capacity.set(1);
+            buffers
+                .nodes_capacity
+                .write_buffer(&render_device, &render_queue);
+        }
+        return;
+    }
+
     // Get the max buffer size for any OIT enabled camera
     let mut max_size = UVec2::new(0, 0);
     let mut fragments_per_pixel_average = 0f32;
@@ -256,11 +280,11 @@ pub fn prepare_oit_buffers(
         .nodes_capacity
         .write_buffer(&render_device, &render_queue);
 
-    if let Some(mut writer) = buffers.settings.get_writer(
-        camera_oit_uniforms.iter().len(),
-        &render_device,
-        &render_queue,
-    ) {
+    if let Some(mut writer) =
+        buffers
+            .settings
+            .get_writer(camera_count, &render_device, &render_queue)
+    {
         for (entity, settings) in &camera_oit_uniforms {
             let offset = writer.write(settings);
             commands
