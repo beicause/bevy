@@ -164,14 +164,14 @@ impl OitBuffers {
     ) -> UninitBufferVec<OitFragmentNode> {
         let mut nodes = UninitBufferVec::new(BufferUsages::COPY_DST | BufferUsages::STORAGE);
         nodes.set_label(Some("oit_nodes"));
-        nodes.reserve(size, &render_device);
+        nodes.reserve(size, render_device);
         nodes
     }
 
     fn create_heads_buffer(size: usize, render_device: &RenderDevice) -> UninitBufferVec<u32> {
         let mut nodes = UninitBufferVec::new(BufferUsages::COPY_DST | BufferUsages::STORAGE);
         nodes.set_label(Some("oit_heads"));
-        nodes.reserve(size, &render_device);
+        nodes.reserve(size, render_device);
         nodes
     }
 }
