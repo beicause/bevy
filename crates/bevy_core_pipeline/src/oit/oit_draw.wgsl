@@ -1,6 +1,6 @@
 #define_import_path bevy_core_pipeline::oit
 
-#import bevy_pbr::mesh_view_bindings::{view, oit_nodes, oit_heads, oit_atomic_counter, oit_settings}
+#import bevy_pbr::mesh_view_bindings::{view, oit_nodes_capacity, oit_nodes, oit_heads, oit_atomic_counter, oit_settings}
 #import bevy_pbr::mesh_view_types::OitFragmentNode
 #import bevy_pbr::prepass_utils
 
@@ -19,12 +19,10 @@ fn oit_draw(position: vec4f, color: vec4f) {
     }
     // get the index of the current fragment relative to the screen size
     let screen_index = u32(floor(position.x) + floor(position.y) * view.viewport.z);
-    // get the size of oit_nodes. It's screen_size * fragments_per_pixel_average
-    let buffer_size = u32(view.viewport.z * view.viewport.w * oit_settings.fragments_per_pixel_average);
 
     var new_node_index = atomicAdd(&oit_atomic_counter, 1u);
     // exit early if we've reached the maximum amount of fragments nodes
-    if new_node_index >= buffer_size {
+    if new_node_index >= oit_nodes_capacity {
         // TODO for tail blending we should return the color here
         return;
     }

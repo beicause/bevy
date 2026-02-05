@@ -402,13 +402,15 @@ fn layout_entries(
                     27,
                     uniform_buffer::<OrderIndependentTransparencySettings>(true),
                 ),
+                // oit_nodes_capacity
+                (28, uniform_buffer::<u32>(false)),
                 // oit_nodes
-                (28, storage_buffer_sized(false, None)),
-                // oit_heads,
                 (29, storage_buffer_sized(false, None)),
+                // oit_heads,
+                (30, storage_buffer_sized(false, None)),
                 // oit_atomic_counter
                 (
-                    30,
+                    31,
                     storage_buffer_sized(false, NonZero::<u64>::new(size_of::<u32>() as u64)),
                 ),
             ));
@@ -420,19 +422,19 @@ fn layout_entries(
         entries = entries.extend_with_indices((
             // transmittance LUT
             (
-                31,
+                32,
                 texture_2d(TextureSampleType::Float { filterable: true }),
             ),
-            (32, sampler(SamplerBindingType::Filtering)),
+            (33, sampler(SamplerBindingType::Filtering)),
             // atmosphere data buffer
-            (33, storage_buffer_read_only::<AtmosphereData>(false)),
+            (34, storage_buffer_read_only::<AtmosphereData>(false)),
         ));
     }
 
     // Blue noise
     if layout_key.contains(MeshPipelineViewLayoutKey::STBN) {
         entries = entries.extend_with_indices(((
-            34,
+            35,
             texture_2d_array(TextureSampleType::Float { filterable: false }),
         ),));
     }
@@ -768,11 +770,13 @@ pub fn prepare_mesh_view_bind_groups(
             if has_oit
                 && let (
                     Some(oit_settings_binding),
+                    Some(oit_nodes_capacity),
                     Some(oit_nodes),
                     Some(oit_heads),
                     Some(oit_atomic_counter),
                 ) = (
                     oit_buffers.settings.binding(),
+                    oit_buffers.nodes_capacity.binding(),
                     oit_buffers.nodes.binding(),
                     oit_buffers.heads.binding(),
                     oit_buffers.atomic_counter.binding(),
@@ -780,9 +784,10 @@ pub fn prepare_mesh_view_bind_groups(
             {
                 entries = entries.extend_with_indices((
                     (27, oit_settings_binding),
-                    (28, oit_nodes),
-                    (29, oit_heads),
-                    (30, oit_atomic_counter),
+                    (28, oit_nodes_capacity),
+                    (29, oit_nodes),
+                    (30, oit_heads),
+                    (31, oit_atomic_counter),
                 ));
             }
 
@@ -793,9 +798,9 @@ pub fn prepare_mesh_view_bind_groups(
                 && let Some(atmosphere_buffer_binding) = atmosphere_buffer.buffer.binding()
             {
                 entries = entries.extend_with_indices((
-                    (31, &atmosphere_textures.transmittance_lut.default_view),
-                    (32, &***atmosphere_sampler),
-                    (33, atmosphere_buffer_binding),
+                    (32, &atmosphere_textures.transmittance_lut.default_view),
+                    (33, &***atmosphere_sampler),
+                    (34, atmosphere_buffer_binding),
                 ));
             }
 
@@ -804,7 +809,7 @@ pub fn prepare_mesh_view_bind_groups(
                     .get(&blue_noise.texture)
                     .expect("STBN texture is added unconditionally with at least a placeholder")
                     .texture_view;
-                entries = entries.extend_with_indices(((34, stbn_view),));
+                entries = entries.extend_with_indices(((35, stbn_view),));
             }
 
             let mut entries_binding_array = DynamicBindGroupEntries::new();

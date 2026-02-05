@@ -10,7 +10,8 @@ use bevy_render::{
     camera::ExtractedCamera,
     extract_component::{ExtractComponent, ExtractComponentPlugin},
     render_resource::{
-        BufferUsages, DynamicUniformBuffer, ShaderType, TextureUsages, UninitBufferVec,
+        BufferUsages, DynamicUniformBuffer, ShaderType, TextureUsages, UniformBuffer,
+        UninitBufferVec,
     },
     renderer::{RenderDevice, RenderQueue},
     view::Msaa,
@@ -147,6 +148,7 @@ pub struct OitFragmentNode {
 #[derive(Resource)]
 pub struct OitBuffers {
     pub settings: DynamicUniformBuffer<OrderIndependentTransparencySettings>,
+    pub nodes_capacity: UniformBuffer<u32>,
     /// OIT nodes buffer contains color, depth and linked next node for each fragments.
     pub nodes: UninitBufferVec<OitFragmentNode>,
     /// OIT heads buffer contains the head that pointers nodes buffer, essentially used as a 2d array where xy is the screen coordinate.
@@ -155,8 +157,17 @@ pub struct OitBuffers {
     pub atomic_counter: UninitBufferVec<u32>,
 }
 
-pub fn init_oit_buffers(mut commands: Commands, render_device: Res<RenderDevice>) {
+pub fn init_oit_buffers(
+    mut commands: Commands,
+    render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
+) {
     // initialize buffers with something so there's a valid binding
+
+    let mut nodes_capacity = UniformBuffer::default();
+    nodes_capacity.set_label(Some("oit_nodes_capacity"));
+    nodes_capacity.set(1);
+    nodes_capacity.write_buffer(&render_device, &render_queue);
 
     let mut nodes = UninitBufferVec::new(BufferUsages::COPY_DST | BufferUsages::STORAGE);
     nodes.set_label(Some("oit_nodes"));
@@ -174,6 +185,7 @@ pub fn init_oit_buffers(mut commands: Commands, render_device: Res<RenderDevice>
     settings.set_label(Some("oit_settings"));
 
     commands.insert_resource(OitBuffers {
+        nodes_capacity,
         nodes,
         heads,
         atomic_counter,
@@ -238,6 +250,11 @@ pub fn prepare_oit_buffers(
             buffers.nodes.capacity() * size_of::<OitFragmentNode>() / 1024 / 1024,
         );
     }
+
+    buffers.nodes_capacity.set(nodes_size as u32);
+    buffers
+        .nodes_capacity
+        .write_buffer(&render_device, &render_queue);
 
     if let Some(mut writer) = buffers.settings.get_writer(
         camera_oit_uniforms.iter().len(),
