@@ -116,8 +116,12 @@ pub struct Bloom {
     pub composite_mode: BloomCompositeMode,
 
     /// Maximum size of each dimension for the largest mipchain texture used in downscaling/upscaling.
-    /// Only tweak if you are seeing visual artifacts.
+    /// Lower values can improve performance but can cause visual artifacts.
     pub max_mip_dimension: u32,
+
+    /// Limits the maximum number of mipmaps used in downscaling/upscaling.
+    /// Lower values reduce downscaling/upscaling render passes which can greatly improve performance, but lose some low frequency contributions.
+    pub max_mip_count: u32,
 
     /// Amount to stretch the bloom on each axis. Artistic control, can be used to emulate
     /// anamorphic blur by using a large x-value. For large values, you may need to increase
@@ -142,6 +146,7 @@ impl Bloom {
         },
         composite_mode: BloomCompositeMode::EnergyConserving,
         max_mip_dimension: Self::DEFAULT_MAX_MIP_DIMENSION,
+        max_mip_count: u32::MAX,
         scale: Vec2::ONE,
     };
 
@@ -165,6 +170,7 @@ impl Bloom {
         },
         composite_mode: BloomCompositeMode::Additive,
         max_mip_dimension: Self::DEFAULT_MAX_MIP_DIMENSION,
+        max_mip_count: u32::MAX,
         scale: Vec2::ONE,
     };
 
@@ -180,6 +186,7 @@ impl Bloom {
         },
         composite_mode: BloomCompositeMode::EnergyConserving,
         max_mip_dimension: Self::DEFAULT_MAX_MIP_DIMENSION,
+        max_mip_count: u32::MAX,
         scale: Vec2::ONE,
     };
 }
