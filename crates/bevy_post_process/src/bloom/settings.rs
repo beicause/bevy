@@ -125,7 +125,7 @@ pub struct Bloom {
 
     /// Amount to stretch the bloom on each axis. Artistic control, can be used to emulate
     /// anamorphic blur by using a large x-value. For large values, you may need to increase
-    /// [`Bloom::max_mip_dimension`] to reduce sampling artifacts.
+    /// [`Bloom::mip_resolution_scale`] to reduce sampling artifacts.
     pub scale: Vec2,
 }
 
