@@ -7,22 +7,25 @@ use crate::MeshPipelineViewLayoutKey;
 
 pub fn get_bind_group_layout_entries(
     layout_key: MeshPipelineViewLayoutKey,
+    float32_filterable: bool,
 ) -> [Option<BindGroupLayoutEntryBuilder>; 4] {
     let mut entries: [Option<BindGroupLayoutEntryBuilder>; 4] = [None; 4];
 
     if layout_key.contains(MeshPipelineViewLayoutKey::DEPTH_PREPASS) {
         // Depth texture
-        entries[0] = Some(texture_2d(TextureSampleType::Float { filterable: false }));
+        entries[0] = Some(texture_2d(TextureSampleType::Float { filterable: true }));
     }
 
     if layout_key.contains(MeshPipelineViewLayoutKey::NORMAL_PREPASS) {
         // Normal texture
-        entries[1] = Some(texture_2d(TextureSampleType::Float { filterable: false }));
+        entries[1] = Some(texture_2d(TextureSampleType::Float { filterable: true }));
     }
 
     if layout_key.contains(MeshPipelineViewLayoutKey::MOTION_VECTOR_PREPASS) {
         // Motion Vectors texture
-        entries[2] = Some(texture_2d(TextureSampleType::Float { filterable: false }));
+        entries[2] = Some(texture_2d(TextureSampleType::Float {
+            filterable: float32_filterable,
+        }));
     }
 
     if layout_key.contains(MeshPipelineViewLayoutKey::DEFERRED_PREPASS) {

@@ -25,8 +25,11 @@
 }
 
 #ifdef USE_DEPTH_SAMPLERS
+// Allows us to sample from the depth buffer with bilinear filtering.
+@group(2) @binding(2) var depth_linear_sampler: sampler;
+
 // Allows us to sample from the depth buffer with nearest-neighbor filtering.
-@group(2) @binding(2) var depth_nearest_sampler: sampler;
+@group(2) @binding(3) var depth_nearest_sampler: sampler;
 #endif
 
 // Manual depth fetch helpers used on WebGPU where depth + filtering sampler is invalid.
