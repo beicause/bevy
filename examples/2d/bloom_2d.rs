@@ -110,10 +110,7 @@ fn update_bloom_settings(
                 bloom.prefilter.threshold_softness
             ));
             text.push_str(&format!("(I/K) Horizontal Scale: {:.2}\n", bloom.scale.x));
-            text.push_str(&format!(
-                "(O/L) Max mipmaps: {:.2}\n",
-                bloom_max_mip_count(&bloom)
-            ));
+            text.push_str(&format!("(O/L) Max mipmaps: {:.2}\n", bloom.max_mip_count));
 
             if keycode.just_pressed(KeyCode::Space) {
                 commands.entity(camera_entity).remove::<Bloom>();
@@ -191,7 +188,7 @@ fn update_bloom_settings(
             if keycode.just_pressed(KeyCode::KeyO) {
                 bloom.max_mip_count += 1;
             }
-            bloom.max_mip_count = bloom_max_mip_count(&bloom);
+            bloom.max_mip_count = bloom.max_mip_count.clamp(1, 10);
         }
 
         None => {
@@ -209,13 +206,6 @@ fn update_bloom_settings(
             .entity(camera_entity)
             .insert(next_tonemap(tonemapping));
     }
-}
-
-/// Max mipmap count that considers `max_mip_dimension`.
-fn bloom_max_mip_count(bloom: &Bloom) -> u32 {
-    (32 - bloom.max_mip_dimension.leading_zeros())
-        .min(bloom.max_mip_count)
-        .max(1)
 }
 
 /// Get the next Tonemapping algorithm

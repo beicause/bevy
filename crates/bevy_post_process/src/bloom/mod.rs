@@ -318,14 +318,7 @@ fn prepare_bloom_textures(
 ) {
     for (entity, camera, bloom) in &views {
         if let Some(viewport) = camera.physical_viewport_size {
-            let viewport_max_elem = viewport.max_element();
-            let bloom_max_elem = viewport_max_elem.min(bloom.max_mip_dimension);
-            let bloom_size_ratio = if viewport_max_elem != 0 {
-                bloom_max_elem as f32 / viewport_max_elem as f32
-            } else {
-                0.
-            };
-            let size = (viewport.as_vec2() * bloom_size_ratio)
+            let size = (viewport.as_vec2() * bloom.mip_resolution_scale)
                 .round()
                 .as_uvec2()
                 .max(UVec2::ONE)
