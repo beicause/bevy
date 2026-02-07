@@ -4,7 +4,7 @@ use bevy_asset::{embedded_asset, load_embedded_asset, AssetServer, Handle};
 use bevy_ecs::prelude::*;
 use bevy_render::{
     render_resource::{
-        binding_types::{sampler, texture_2d},
+        binding_types::{sampler, texture_2d, texture_2d_multisampled},
         *,
     },
     renderer::RenderDevice,
@@ -34,6 +34,7 @@ impl Plugin for BlitPlugin {
 #[derive(Resource)]
 pub struct BlitPipeline {
     pub layout: BindGroupLayoutDescriptor,
+    pub layout_src_multisampled: BindGroupLayoutDescriptor,
     pub sampler: Sampler,
     pub fullscreen_shader: FullscreenShader,
     pub fragment_shader: Handle<Shader>,
@@ -56,10 +57,21 @@ pub fn init_blit_pipeline(
         ),
     );
 
+    let layout_src_multisampled = BindGroupLayoutDescriptor::new(
+        "blit_bind_group_layout",
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (texture_2d_multisampled(TextureSampleType::Float {
+                filterable: false,
+            }),),
+        ),
+    );
+
     let sampler = render_device.create_sampler(&SamplerDescriptor::default());
 
     commands.insert_resource(BlitPipeline {
         layout,
+        layout_src_multisampled,
         sampler,
         fullscreen_shader: fullscreen_shader.clone(),
         fragment_shader: load_embedded_asset!(asset_server.as_ref(), "blit.wgsl"),
@@ -79,25 +91,48 @@ impl BlitPipeline {
             &BindGroupEntries::sequential((src_texture, &self.sampler)),
         )
     }
+
+    pub fn create_bind_group_multisampled(
+        &self,
+        render_device: &RenderDevice,
+        src_texture: &TextureView,
+        pipeline_cache: &PipelineCache,
+    ) -> BindGroup {
+        render_device.create_bind_group(
+            None,
+            &pipeline_cache.get_bind_group_layout(&self.layout_src_multisampled),
+            &BindGroupEntries::single(src_texture),
+        )
+    }
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct BlitPipelineKey {
     pub texture_format: TextureFormat,
     pub blend_state: Option<BlendState>,
-    pub samples: u32,
+    pub target_samples: u32,
+    pub src_multisampled: bool,
 }
 
 impl SpecializedRenderPipeline for BlitPipeline {
     type Key = BlitPipelineKey;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
+        let (layout, shader_defs) = if key.src_multisampled {
+            (
+                vec![self.layout_src_multisampled.clone()],
+                vec!["MULTISAMPLED".into()],
+            )
+        } else {
+            (vec![self.layout.clone()], vec![])
+        };
         RenderPipelineDescriptor {
             label: Some("blit pipeline".into()),
-            layout: vec![self.layout.clone()],
+            layout,
             vertex: self.fullscreen_shader.to_vertex_state(),
             fragment: Some(FragmentState {
                 shader: self.fragment_shader.clone(),
+                shader_defs,
                 targets: vec![Some(ColorTargetState {
                     format: key.texture_format,
                     blend: key.blend_state,
@@ -106,7 +141,7 @@ impl SpecializedRenderPipeline for BlitPipeline {
                 ..default()
             }),
             multisample: MultisampleState {
-                count: key.samples,
+                count: key.target_samples,
                 ..default()
             },
             ..default()

@@ -74,7 +74,8 @@ fn prepare_view_upscaling_pipelines(
         let key = BlitPipelineKey {
             texture_format: view_target.out_texture_view_format(),
             blend_state,
-            samples: 1,
+            target_samples: 1,
+            src_multisampled: false,
         };
         let pipeline = pipelines.specialize(&pipeline_cache, &blit_pipeline, key);
 

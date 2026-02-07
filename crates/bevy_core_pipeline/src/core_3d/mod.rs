@@ -68,11 +68,14 @@ use bevy_render::{
 use nonmax::NonMaxU32;
 use tracing::warn;
 
-use crate::deferred::copy_lighting_id::copy_deferred_lighting_id;
-use crate::deferred::node::{early_deferred_prepass, late_deferred_prepass};
 use crate::prepass::node::{early_prepass, late_prepass};
 use crate::tonemapping::tonemapping;
 use crate::upscaling::upscaling;
+use crate::{deferred::copy_lighting_id::copy_deferred_lighting_id, prepass::DEPTH_PREPASS_FORMAT};
+use crate::{
+    deferred::node::{early_deferred_prepass, late_deferred_prepass},
+    prepass::prepare_depth_prepass_resolve_pipeline,
+};
 use crate::{
     deferred::{
         AlphaMask3dDeferred, Opaque3dDeferred, DEFERRED_LIGHTING_PASS_ID_FORMAT,
@@ -131,6 +134,7 @@ impl Plugin for Core3dPlugin {
                         .in_set(RenderSystems::ManageViews),
                     prepare_core_3d_depth_textures.in_set(RenderSystems::PrepareResources),
                     prepare_prepass_textures.in_set(RenderSystems::PrepareResources),
+                    prepare_depth_prepass_resolve_pipeline.in_set(RenderSystems::PrepareResources),
                 ),
             )
             .add_schedule(Core3d::base_schedule())
@@ -628,7 +632,7 @@ pub fn prepare_core_3d_depth_textures(
         let mut usage: TextureUsages = camera_3d.depth_texture_usages.into();
         if depth_prepass.is_some() {
             // Required to read the output of the prepass
-            usage |= TextureUsages::COPY_SRC;
+            usage |= TextureUsages::TEXTURE_BINDING;
         }
         render_target_usage
             .entry(camera.target.clone())
@@ -775,12 +779,10 @@ pub fn prepare_prepass_textures(
                         label: Some("prepass_depth_texture_1"),
                         size,
                         mip_level_count: 1,
-                        sample_count: msaa.samples(),
+                        sample_count: 1,
                         dimension: TextureDimension::D2,
-                        format: CORE_3D_DEPTH_FORMAT,
-                        usage: TextureUsages::COPY_DST
-                            | TextureUsages::RENDER_ATTACHMENT
-                            | TextureUsages::TEXTURE_BINDING,
+                        format: DEPTH_PREPASS_FORMAT,
+                        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
                         view_formats: &[],
                     };
                     texture_cache.get(&render_device, descriptor)
@@ -796,12 +798,10 @@ pub fn prepare_prepass_textures(
                         label: Some("prepass_depth_texture_2"),
                         size,
                         mip_level_count: 1,
-                        sample_count: msaa.samples(),
+                        sample_count: 1,
                         dimension: TextureDimension::D2,
-                        format: CORE_3D_DEPTH_FORMAT,
-                        usage: TextureUsages::COPY_DST
-                            | TextureUsages::RENDER_ATTACHMENT
-                            | TextureUsages::TEXTURE_BINDING,
+                        format: DEPTH_PREPASS_FORMAT,
+                        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
                         view_formats: &[],
                     };
                     texture_cache.get(&render_device, descriptor)
@@ -809,22 +809,44 @@ pub fn prepare_prepass_textures(
                 .clone()
         });
 
+        let prepass_multisampled_usage =
+            TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT;
+        let prepass_unsampled_usage =
+            TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING;
         let cached_normals_texture = normal_prepass.then(|| {
             normal_textures
                 .entry(camera.target.clone())
                 .or_insert_with(|| {
-                    texture_cache.get(
-                        &render_device,
-                        TextureDescriptor {
-                            label: Some("prepass_normal_texture"),
-                            size,
-                            mip_level_count: 1,
-                            sample_count: msaa.samples(),
-                            dimension: TextureDimension::D2,
-                            format: NORMAL_PREPASS_FORMAT,
-                            usage: TextureUsages::RENDER_ATTACHMENT
-                                | TextureUsages::TEXTURE_BINDING,
-                            view_formats: &[],
+                    (
+                        texture_cache.get(
+                            &render_device,
+                            TextureDescriptor {
+                                label: Some("prepass_normal_texture"),
+                                size,
+                                mip_level_count: 1,
+                                sample_count: 1,
+                                dimension: TextureDimension::D2,
+                                format: NORMAL_PREPASS_FORMAT,
+                                usage: prepass_unsampled_usage,
+                                view_formats: &[],
+                            },
+                        ),
+                        if msaa.samples() > 1 {
+                            Some(texture_cache.get(
+                                &render_device,
+                                TextureDescriptor {
+                                    label: Some("prepass_normal_texture_multisampled"),
+                                    size,
+                                    mip_level_count: 1,
+                                    sample_count: msaa.samples(),
+                                    dimension: TextureDimension::D2,
+                                    format: NORMAL_PREPASS_FORMAT,
+                                    usage: prepass_multisampled_usage,
+                                    view_formats: &[],
+                                },
+                            ))
+                        } else {
+                            None
                         },
                     )
                 })
@@ -835,18 +857,36 @@ pub fn prepare_prepass_textures(
             motion_vectors_textures
                 .entry(camera.target.clone())
                 .or_insert_with(|| {
-                    texture_cache.get(
-                        &render_device,
-                        TextureDescriptor {
-                            label: Some("prepass_motion_vectors_textures"),
-                            size,
-                            mip_level_count: 1,
-                            sample_count: msaa.samples(),
-                            dimension: TextureDimension::D2,
-                            format: MOTION_VECTOR_PREPASS_FORMAT,
-                            usage: TextureUsages::RENDER_ATTACHMENT
-                                | TextureUsages::TEXTURE_BINDING,
-                            view_formats: &[],
+                    (
+                        texture_cache.get(
+                            &render_device,
+                            TextureDescriptor {
+                                label: Some("prepass_motion_vectors_texture"),
+                                size,
+                                mip_level_count: 1,
+                                sample_count: 1,
+                                dimension: TextureDimension::D2,
+                                format: MOTION_VECTOR_PREPASS_FORMAT,
+                                usage: prepass_unsampled_usage,
+                                view_formats: &[],
+                            },
+                        ),
+                        if msaa.samples() > 1 {
+                            Some(texture_cache.get(
+                                &render_device,
+                                TextureDescriptor {
+                                    label: Some("prepass_motion_vectors_texture_multisampled"),
+                                    size,
+                                    mip_level_count: 1,
+                                    sample_count: msaa.samples(),
+                                    dimension: TextureDimension::D2,
+                                    format: MOTION_VECTOR_PREPASS_FORMAT,
+                                    usage: prepass_multisampled_usage,
+                                    view_formats: &[],
+                                },
+                            ))
+                        } else {
+                            None
                         },
                     )
                 })
@@ -925,13 +965,15 @@ pub fn prepare_prepass_textures(
                 cached_depth_texture2,
                 frame_count.0,
             ),
-            normal: cached_normals_texture
-                .map(|t| ColorAttachment::new(t, None, None, Some(LinearRgba::BLACK))),
+            normal: cached_normals_texture.map(|(unsampled, multisampled)| {
+                ColorAttachment::new(unsampled, multisampled, None, Some(LinearRgba::BLACK))
+            }),
             // Red and Green channels are X and Y components of the motion vectors
             // Blue channel doesn't matter, but set to 0.0 for possible faster clear
             // https://gpuopen.com/performance/#clears
-            motion_vectors: cached_motion_vectors_texture
-                .map(|t| ColorAttachment::new(t, None, None, Some(LinearRgba::BLACK))),
+            motion_vectors: cached_motion_vectors_texture.map(|(unsampled, multisampled)| {
+                ColorAttachment::new(unsampled, multisampled, None, Some(LinearRgba::BLACK))
+            }),
             deferred: package_double_buffered_texture(
                 cached_deferred_texture1,
                 cached_deferred_texture2,

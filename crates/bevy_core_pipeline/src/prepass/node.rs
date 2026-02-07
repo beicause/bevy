@@ -7,13 +7,17 @@ use bevy_render::{
     render_phase::ViewBinnedRenderPhases,
     render_resource::{PipelineCache, RenderPassDescriptor, StoreOp},
     renderer::{RenderContext, ViewQuery},
-    view::{ExtractedView, NoIndirectDrawing, ViewDepthTexture, ViewUniformOffset},
+    view::{ExtractedView, Msaa, NoIndirectDrawing, ViewDepthTexture, ViewUniformOffset},
 };
 use tracing::error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
 
-use crate::skybox::prepass::{RenderSkyboxPrepassPipeline, SkyboxPrepassBindGroup};
+use crate::{
+    blit::BlitPipeline,
+    prepass::DepthPrepassResolvePipeline,
+    skybox::prepass::{RenderSkyboxPrepassPipeline, SkyboxPrepassBindGroup},
+};
 
 use super::{
     AlphaMask3dPrepass, DeferredPrepass, Opaque3dPrepass, PreviousViewUniformOffset,
@@ -28,9 +32,10 @@ type PrepassViewQueryData = (
         &'static ViewDepthTexture,
         &'static ViewPrepassTextures,
         &'static ViewUniformOffset,
+        &'static Msaa,
     ),
     (
-        Option<&'static DeferredPrepass>,
+        Option<&'static DepthPrepassResolvePipeline>,
         Option<&'static RenderSkyboxPrepassPipeline>,
         Option<&'static SkyboxPrepassBindGroup>,
         Option<&'static PreviousViewUniformOffset>,
@@ -46,6 +51,7 @@ type PrepassViewQueryData = (
 pub fn early_prepass(
     world: &World,
     view: ViewQuery<PrepassViewQueryData>,
+    blit_pipeline: Res<BlitPipeline>,
     opaque_prepass_phases: Res<ViewBinnedRenderPhases<Opaque3dPrepass>>,
     alpha_mask_prepass_phases: Res<ViewBinnedRenderPhases<AlphaMask3dPrepass>>,
     pipeline_cache: Res<PipelineCache>,
@@ -53,9 +59,16 @@ pub fn early_prepass(
 ) {
     let view_entity = view.entity();
     let (
-        (camera, extracted_view, view_depth_texture, view_prepass_textures, view_uniform_offset),
         (
-            deferred_prepass,
+            camera,
+            extracted_view,
+            view_depth_texture,
+            view_prepass_textures,
+            view_uniform_offset,
+            msaa,
+        ),
+        (
+            depth_prepass_resolve_pipeline,
             skybox_prepass_pipeline,
             skybox_prepass_bind_group,
             view_prev_uniform_offset,
@@ -72,7 +85,9 @@ pub fn early_prepass(
         view_depth_texture,
         view_prepass_textures,
         view_uniform_offset,
-        deferred_prepass,
+        msaa,
+        depth_prepass_resolve_pipeline,
+        blit_pipeline,
         skybox_prepass_pipeline,
         skybox_prepass_bind_group,
         view_prev_uniform_offset,
@@ -89,6 +104,7 @@ pub fn early_prepass(
 pub fn late_prepass(
     world: &World,
     view: ViewQuery<PrepassViewQueryData>,
+    blit_pipeline: Res<BlitPipeline>,
     opaque_prepass_phases: Res<ViewBinnedRenderPhases<Opaque3dPrepass>>,
     alpha_mask_prepass_phases: Res<ViewBinnedRenderPhases<AlphaMask3dPrepass>>,
     pipeline_cache: Res<PipelineCache>,
@@ -96,9 +112,16 @@ pub fn late_prepass(
 ) {
     let view_entity = view.entity();
     let (
-        (camera, extracted_view, view_depth_texture, view_prepass_textures, view_uniform_offset),
         (
-            deferred_prepass,
+            camera,
+            extracted_view,
+            view_depth_texture,
+            view_prepass_textures,
+            view_uniform_offset,
+            msaa,
+        ),
+        (
+            depth_prepass_resolve_pipeline,
             skybox_prepass_pipeline,
             skybox_prepass_bind_group,
             view_prev_uniform_offset,
@@ -119,7 +142,9 @@ pub fn late_prepass(
         view_depth_texture,
         view_prepass_textures,
         view_uniform_offset,
-        deferred_prepass,
+        msaa,
+        depth_prepass_resolve_pipeline,
+        blit_pipeline,
         skybox_prepass_pipeline,
         skybox_prepass_bind_group,
         view_prev_uniform_offset,
@@ -146,7 +171,9 @@ fn run_prepass_system(
     view_depth_texture: &ViewDepthTexture,
     view_prepass_textures: &ViewPrepassTextures,
     view_uniform_offset: &ViewUniformOffset,
-    deferred_prepass: Option<&DeferredPrepass>,
+    msaa: &Msaa,
+    depth_prepass_resolve_pipeline: Option<&DepthPrepassResolvePipeline>,
+    blit_pipeline: Res<BlitPipeline>,
     skybox_prepass_pipeline: Option<&RenderSkyboxPrepassPipeline>,
     skybox_prepass_bind_group: Option<&SkyboxPrepassBindGroup>,
     view_prev_uniform_offset: Option<&PreviousViewUniformOffset>,
@@ -172,21 +199,35 @@ fn run_prepass_system(
         return;
     };
 
+    let depth_prepass_resolve_pipeline = if let Some(pipeline_id) = depth_prepass_resolve_pipeline {
+        if let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id.0) {
+            Some(pipeline)
+        } else {
+            return;
+        }
+    } else {
+        None
+    };
+
     #[cfg(feature = "trace")]
     let _prepass_span = info_span!("prepass").entered();
 
     let diagnostics = ctx.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();
-
+    let store = if msaa.samples() > 1 {
+        StoreOp::Discard
+    } else {
+        StoreOp::Store
+    };
     let mut color_attachments = vec![
         view_prepass_textures
             .normal
             .as_ref()
-            .map(|normals_texture| normals_texture.get_attachment()),
+            .map(|normals_texture| normals_texture.get_attachment(store)),
         view_prepass_textures
             .motion_vectors
             .as_ref()
-            .map(|motion_vectors_texture| motion_vectors_texture.get_attachment()),
+            .map(|motion_vectors_texture| motion_vectors_texture.get_attachment(store)),
         // Use None in place of deferred attachments
         None,
         None,
@@ -253,13 +294,36 @@ fn run_prepass_system(
     pass_span.end(&mut render_pass);
     drop(render_pass);
 
-    if deferred_prepass.is_none()
+    if let Some(pipeline) = depth_prepass_resolve_pipeline
         && let Some(prepass_depth_texture) = &view_prepass_textures.depth
     {
-        ctx.command_encoder().copy_texture_to_texture(
-            view_depth_texture.texture.as_image_copy(),
-            prepass_depth_texture.texture.texture.as_image_copy(),
-            view_prepass_textures.size,
-        );
+        let bind_group = if msaa.samples() > 1 {
+            blit_pipeline.create_bind_group_multisampled(
+                ctx.render_device(),
+                view_depth_texture.view(),
+                pipeline_cache,
+            )
+        } else {
+            blit_pipeline.create_bind_group(
+                ctx.render_device(),
+                view_depth_texture.view(),
+                pipeline_cache,
+            )
+        };
+        let label = "depth_prepass_resolve_pass";
+        let mut render_pass = ctx.begin_tracked_render_pass(RenderPassDescriptor {
+            label: Some(label),
+            color_attachments: &[Some(prepass_depth_texture.get_attachment(StoreOp::Store))],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        let pass_span = diagnostics.pass_span(&mut render_pass, label);
+        render_pass.set_render_pipeline(pipeline);
+        render_pass.set_bind_group(0, &bind_group, &[]);
+        render_pass.draw(0..3, 0..1);
+        pass_span.end(&mut render_pass);
+        drop(render_pass);
     }
 }

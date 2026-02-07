@@ -11,19 +11,17 @@ use bevy_image::BevyDefault as _;
 use bevy_render::{
     globals::GlobalsUniform,
     render_resource::{
-        binding_types::{
-            sampler, texture_2d, texture_2d_multisampled, texture_depth_2d,
-            texture_depth_2d_multisampled, uniform_buffer_sized,
-        },
+        binding_types::{sampler, texture_2d, uniform_buffer_sized},
         BindGroupLayoutDescriptor, BindGroupLayoutEntries, CachedRenderPipelineId,
-        ColorTargetState, ColorWrites, FragmentState, PipelineCache, RenderPipelineDescriptor,
-        Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, ShaderType,
-        SpecializedRenderPipeline, SpecializedRenderPipelines, TextureFormat, TextureSampleType,
+        ColorTargetState, ColorWrites, FilterMode, FragmentState, PipelineCache,
+        RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages,
+        ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines, TextureFormat,
+        TextureSampleType,
     },
     renderer::RenderDevice,
-    view::{ExtractedView, Msaa, ViewTarget},
+    view::{ExtractedView, ViewTarget},
 };
-use bevy_shader::{Shader, ShaderDefVal};
+use bevy_shader::Shader;
 use bevy_utils::default;
 
 use super::MotionBlurUniform;
@@ -32,7 +30,6 @@ use super::MotionBlurUniform;
 pub struct MotionBlurPipeline {
     pub(crate) sampler: Sampler,
     pub(crate) layout: BindGroupLayoutDescriptor,
-    pub(crate) layout_msaa: BindGroupLayoutDescriptor,
     pub(crate) fullscreen_shader: FullscreenShader,
     pub(crate) fragment_shader: Handle<Shader>,
 }
@@ -50,26 +47,8 @@ impl MotionBlurPipeline {
                 texture_2d(TextureSampleType::Float { filterable: true }),
                 // Motion Vectors
                 texture_2d(TextureSampleType::Float { filterable: true }),
-                // Depth
-                texture_depth_2d(),
-                // Linear Sampler
-                sampler(SamplerBindingType::Filtering),
-                // Motion blur settings uniform input
-                uniform_buffer_sized(false, Some(MotionBlurUniform::min_size())),
-                // Globals uniform input
-                uniform_buffer_sized(false, Some(GlobalsUniform::min_size())),
-            ),
-        );
-
-        let mb_layout_msaa = &BindGroupLayoutEntries::sequential(
-            ShaderStages::FRAGMENT,
-            (
-                // View target (read)
+                // Depth, requires [`bevy_render::settings::WgpuFeatures::FLOAT32_FILTERABLE`].
                 texture_2d(TextureSampleType::Float { filterable: true }),
-                // Motion Vectors
-                texture_2d_multisampled(TextureSampleType::Float { filterable: false }),
-                // Depth
-                texture_depth_2d_multisampled(),
                 // Linear Sampler
                 sampler(SamplerBindingType::Filtering),
                 // Motion blur settings uniform input
@@ -79,14 +58,16 @@ impl MotionBlurPipeline {
             ),
         );
 
-        let sampler = render_device.create_sampler(&SamplerDescriptor::default());
+        let sampler = render_device.create_sampler(&SamplerDescriptor {
+            min_filter: FilterMode::Linear,
+            mag_filter: FilterMode::Linear,
+            ..Default::default()
+        });
         let layout = BindGroupLayoutDescriptor::new("motion_blur_layout", mb_layout);
-        let layout_msaa = BindGroupLayoutDescriptor::new("motion_blur_layout_msaa", mb_layout_msaa);
 
         Self {
             sampler,
             layout,
-            layout_msaa,
             fullscreen_shader,
             fragment_shader,
         }
@@ -111,23 +92,13 @@ pub fn init_motion_blur_pipeline(
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct MotionBlurPipelineKey {
     hdr: bool,
-    samples: u32,
 }
 
 impl SpecializedRenderPipeline for MotionBlurPipeline {
     type Key = MotionBlurPipelineKey;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
-        let layout = match key.samples {
-            1 => vec![self.layout.clone()],
-            _ => vec![self.layout_msaa.clone()],
-        };
-
-        let mut shader_defs = vec![];
-
-        if key.samples > 1 {
-            shader_defs.push(ShaderDefVal::from("MULTISAMPLED"));
-        }
+        let layout = vec![self.layout.clone()];
 
         #[cfg(all(feature = "webgl", target_arch = "wasm32", not(feature = "webgpu")))]
         {
@@ -141,7 +112,6 @@ impl SpecializedRenderPipeline for MotionBlurPipeline {
             vertex: self.fullscreen_shader.to_vertex_state(),
             fragment: Some(FragmentState {
                 shader: self.fragment_shader.clone(),
-                shader_defs,
                 targets: vec![Some(ColorTargetState {
                     format: if key.hdr {
                         ViewTarget::TEXTURE_FORMAT_HDR
@@ -166,16 +136,13 @@ pub(crate) fn prepare_motion_blur_pipelines(
     pipeline_cache: Res<PipelineCache>,
     mut pipelines: ResMut<SpecializedRenderPipelines<MotionBlurPipeline>>,
     pipeline: Res<MotionBlurPipeline>,
-    views: Query<(Entity, &ExtractedView, &Msaa), With<MotionBlurUniform>>,
+    views: Query<(Entity, &ExtractedView), With<MotionBlurUniform>>,
 ) {
-    for (entity, view, msaa) in &views {
+    for (entity, view) in &views {
         let pipeline_id = pipelines.specialize(
             &pipeline_cache,
             &pipeline,
-            MotionBlurPipelineKey {
-                hdr: view.hdr,
-                samples: msaa.samples(),
-            },
+            MotionBlurPipelineKey { hdr: view.hdr },
         );
 
         commands

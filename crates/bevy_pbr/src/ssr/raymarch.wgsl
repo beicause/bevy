@@ -38,7 +38,7 @@ fn depth_texel_clamped(texel: vec2<i32>) -> f32 {
     let dims = textureDimensions(depth_prepass_texture);
     let max_coord = vec2<i32>(i32(dims.x) - 1, i32(dims.y) - 1);
     let clamped = clamp(texel, vec2<i32>(0), max_coord);
-    return textureLoad(depth_prepass_texture, clamped, 0);
+    return textureLoad(depth_prepass_texture, clamped, 0).r;
 }
 
 fn depth_sample_nearest_clamped(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
@@ -65,7 +65,7 @@ fn depth_sample_bilinear_clamped(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
 
 fn depth_sample_linear(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
 #ifdef USE_DEPTH_SAMPLERS
-    return textureSampleLevel(depth_prepass_texture, depth_linear_sampler, uv, 0u);
+    return textureSampleLevel(depth_prepass_texture, depth_linear_sampler, uv, 0u).r;
 #else
     return depth_sample_bilinear_clamped(uv, tex_size);
 #endif
@@ -73,7 +73,7 @@ fn depth_sample_linear(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
 
 fn depth_sample_nearest(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
 #ifdef USE_DEPTH_SAMPLERS
-    return textureSampleLevel(depth_prepass_texture, depth_nearest_sampler, uv, 0u);
+    return textureSampleLevel(depth_prepass_texture, depth_nearest_sampler, uv, 0u).r;
 #else
     return depth_sample_nearest_clamped(uv, tex_size);
 #endif
