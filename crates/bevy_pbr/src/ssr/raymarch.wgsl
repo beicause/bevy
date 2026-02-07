@@ -25,11 +25,8 @@
 }
 
 #ifdef USE_DEPTH_SAMPLERS
-// Allows us to sample from the depth buffer with bilinear filtering.
-@group(2) @binding(2) var depth_linear_sampler: sampler;
-
 // Allows us to sample from the depth buffer with nearest-neighbor filtering.
-@group(2) @binding(3) var depth_nearest_sampler: sampler;
+@group(2) @binding(2) var depth_nearest_sampler: sampler;
 #endif
 
 // Manual depth fetch helpers used on WebGPU where depth + filtering sampler is invalid.
@@ -65,7 +62,7 @@ fn depth_sample_bilinear_clamped(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
 
 fn depth_sample_linear(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
 #ifdef USE_DEPTH_SAMPLERS
-    return textureSampleLevel(depth_prepass_texture, depth_linear_sampler, uv, 0u).r;
+    return textureSampleLevel(depth_prepass_texture, depth_linear_sampler, uv, 0.0).r;
 #else
     return depth_sample_bilinear_clamped(uv, tex_size);
 #endif
@@ -73,7 +70,7 @@ fn depth_sample_linear(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
 
 fn depth_sample_nearest(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
 #ifdef USE_DEPTH_SAMPLERS
-    return textureSampleLevel(depth_prepass_texture, depth_nearest_sampler, uv, 0u).r;
+    return textureSampleLevel(depth_prepass_texture, depth_nearest_sampler, uv, 0.0).r;
 #else
     return depth_sample_nearest_clamped(uv, tex_size);
 #endif

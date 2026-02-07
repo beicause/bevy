@@ -171,7 +171,6 @@ pub struct ScreenSpaceReflectionsPipelineId(pub CachedRenderPipelineId);
 pub struct ScreenSpaceReflectionsPipeline {
     mesh_view_layouts: MeshPipelineViewLayouts,
     color_sampler: Sampler,
-    depth_linear_sampler: Sampler,
     depth_nearest_sampler: Sampler,
     bind_group_layout: BindGroupLayoutDescriptor,
     binding_arrays_are_usable: bool,
@@ -303,7 +302,6 @@ pub fn screen_space_reflections(
         &BindGroupEntries::sequential((
             postprocess.source,
             &ssr_pipeline.color_sampler,
-            &ssr_pipeline.depth_linear_sampler,
             &ssr_pipeline.depth_nearest_sampler,
             &stbn_view,
         )),
@@ -386,15 +384,6 @@ pub fn init_screen_space_reflections_pipeline(
         ..default()
     });
 
-    let depth_linear_sampler = render_device.create_sampler(&SamplerDescriptor {
-        label: "SSR depth linear sampler".into(),
-        address_mode_u: AddressMode::ClampToEdge,
-        address_mode_v: AddressMode::ClampToEdge,
-        mag_filter: FilterMode::Linear,
-        min_filter: FilterMode::Linear,
-        ..default()
-    });
-
     let depth_nearest_sampler = render_device.create_sampler(&SamplerDescriptor {
         label: "SSR depth nearest sampler".into(),
         address_mode_u: AddressMode::ClampToEdge,
@@ -407,7 +396,6 @@ pub fn init_screen_space_reflections_pipeline(
     commands.insert_resource(ScreenSpaceReflectionsPipeline {
         mesh_view_layouts: mesh_view_layouts.clone(),
         color_sampler,
-        depth_linear_sampler,
         depth_nearest_sampler,
         bind_group_layout,
         binding_arrays_are_usable: binding_arrays_are_usable(&render_device, &render_adapter),

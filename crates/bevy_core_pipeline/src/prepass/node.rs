@@ -310,7 +310,7 @@ fn run_prepass_system(
                 pipeline_cache,
             )
         };
-        let label = "depth_prepass_resolve_pass";
+        let label = "depth_prepass_resolve";
         let mut render_pass = ctx.begin_tracked_render_pass(RenderPassDescriptor {
             label: Some(label),
             color_attachments: &[Some(prepass_depth_texture.get_attachment(StoreOp::Store))],
