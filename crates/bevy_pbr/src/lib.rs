@@ -28,7 +28,10 @@ mod atmosphere;
 mod cluster;
 mod components;
 pub mod contact_shadows;
-use bevy_gltf::extensions::{GltfExtensionHandler, GltfExtensionHandlers};
+use bevy_gltf::{
+    extensions::{GltfExtensionHandler, GltfExtensionHandlers},
+    GltfAssetLabel,
+};
 use bevy_render::sync_component::SyncComponent;
 pub use contact_shadows::{
     ContactShadows, ContactShadowsBuffer, ContactShadowsPlugin, ContactShadowsUniform,
@@ -413,10 +416,30 @@ fn standard_material_from_gltf_material(material: &GltfMaterial) -> StandardMate
         normal_map_texture: material.normal_map_texture.clone(),
         occlusion_channel: material.occlusion_channel.clone(),
         occlusion_texture: material.occlusion_texture.clone(),
+        #[cfg(feature = "pbr_specular_textures")]
+        specular_channel: material.specular_channel.clone(),
+        #[cfg(feature = "pbr_specular_textures")]
+        specular_texture: material.specular_texture.clone(),
+        #[cfg(feature = "pbr_specular_textures")]
+        specular_tint_channel: material.specular_tint_channel.clone(),
+        #[cfg(feature = "pbr_specular_textures")]
+        specular_tint_texture: material.specular_tint_texture.clone(),
         clearcoat: material.clearcoat,
         clearcoat_perceptual_roughness: material.clearcoat_perceptual_roughness,
+        #[cfg(feature = "pbr_multi_layer_material_textures")]
+        clearcoat_roughness_channel: material.clearcoat_roughness_channel.clone(),
+        #[cfg(feature = "pbr_multi_layer_material_textures")]
+        clearcoat_roughness_texture: material.clearcoat_roughness_texture.clone(),
+        #[cfg(feature = "pbr_multi_layer_material_textures")]
+        clearcoat_normal_channel: material.clearcoat_normal_channel.clone(),
+        #[cfg(feature = "pbr_multi_layer_material_textures")]
+        clearcoat_normal_texture: material.clearcoat_normal_texture.clone(),
         anisotropy_strength: material.anisotropy_strength,
         anisotropy_rotation: material.anisotropy_rotation,
+        #[cfg(feature = "pbr_anisotropy_texture")]
+        anisotropy_channel: material.anisotropy_channel.clone(),
+        #[cfg(feature = "pbr_anisotropy_texture")]
+        anisotropy_texture: material.anisotropy_texture.clone(),
         double_sided: material.double_sided,
         cull_mode: material.cull_mode,
         unlit: material.unlit,
@@ -433,6 +456,16 @@ impl GltfExtensionHandler for GltfExtensionHandlerPbr {
     fn dyn_clone(&self) -> Box<dyn GltfExtensionHandler> {
         Box::new((*self).clone())
     }
+    fn on_root(&mut self, load_context: &mut LoadContext<'_>, _gltf: &gltf::Gltf) {
+        // create the `StandardMaterial` for the glTF `DefaultMaterial` so
+        // it can be accessed when meshes don't have materials.
+        let std_label = format!("{}#std", GltfAssetLabel::DefaultMaterial);
+
+        load_context.add_labeled_asset(
+            std_label,
+            standard_material_from_gltf_material(&GltfMaterial::default()),
+        );
+    }
 
     fn on_material(
         &mut self,
@@ -442,11 +475,12 @@ impl GltfExtensionHandler for GltfExtensionHandlerPbr {
         material_asset: &GltfMaterial,
         material_label: &str,
     ) {
-        let std_label = format!("{:?}#std", material_label);
+        let std_label = format!("{}#std", material_label);
 
-        let _t = load_context.labeled_asset_scope::<_, ()>(std_label, |_load_context| {
-            Ok(standard_material_from_gltf_material(material_asset))
-        });
+        load_context.add_labeled_asset(
+            std_label,
+            standard_material_from_gltf_material(material_asset),
+        );
     }
 
     fn on_spawn_mesh_and_material(
@@ -458,7 +492,7 @@ impl GltfExtensionHandler for GltfExtensionHandlerPbr {
         entity: &mut EntityWorldMut,
         material_label: &str,
     ) {
-        let std_label = format!("{:?}#std", material_label);
+        let std_label = format!("{}#std", material_label);
         let handle = load_context.get_label_handle::<StandardMaterial>(std_label);
 
         entity.insert(MeshMaterial3d(handle));
