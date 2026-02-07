@@ -68,7 +68,7 @@ use bevy_render::{
 use nonmax::NonMaxU32;
 use tracing::warn;
 
-use crate::prepass::node::{early_prepass, late_prepass};
+use crate::prepass::node::{depth_prepass_resolve, early_prepass, late_prepass};
 use crate::tonemapping::tonemapping;
 use crate::upscaling::upscaling;
 use crate::{deferred::copy_lighting_id::copy_deferred_lighting_id, prepass::DEPTH_PREPASS_FORMAT};
@@ -133,8 +133,8 @@ impl Plugin for Core3dPlugin {
                         .after(prepare_view_targets)
                         .in_set(RenderSystems::ManageViews),
                     prepare_core_3d_depth_textures.in_set(RenderSystems::PrepareResources),
-                    prepare_prepass_textures.in_set(RenderSystems::PrepareResources),
                     prepare_depth_prepass_resolve_pipeline.in_set(RenderSystems::PrepareResources),
+                    prepare_prepass_textures.in_set(RenderSystems::PrepareResources),
                 ),
             )
             .add_schedule(Core3d::base_schedule())
@@ -146,6 +146,7 @@ impl Plugin for Core3dPlugin {
                         early_deferred_prepass,
                         late_prepass,
                         late_deferred_prepass,
+                        depth_prepass_resolve,
                         copy_deferred_lighting_id,
                     )
                         .chain()
@@ -808,7 +809,7 @@ pub fn prepare_prepass_textures(
                 })
                 .clone()
         });
-
+        // Use memoryless multisampled textures.
         let prepass_multisampled_usage =
             TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT;
         let prepass_unsampled_usage =

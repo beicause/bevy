@@ -35,7 +35,6 @@ type PrepassViewQueryData = (
         &'static Msaa,
     ),
     (
-        Option<&'static DepthPrepassResolvePipeline>,
         Option<&'static RenderSkyboxPrepassPipeline>,
         Option<&'static SkyboxPrepassBindGroup>,
         Option<&'static PreviousViewUniformOffset>,
@@ -51,7 +50,6 @@ type PrepassViewQueryData = (
 pub fn early_prepass(
     world: &World,
     view: ViewQuery<PrepassViewQueryData>,
-    blit_pipeline: Res<BlitPipeline>,
     opaque_prepass_phases: Res<ViewBinnedRenderPhases<Opaque3dPrepass>>,
     alpha_mask_prepass_phases: Res<ViewBinnedRenderPhases<AlphaMask3dPrepass>>,
     pipeline_cache: Res<PipelineCache>,
@@ -68,7 +66,6 @@ pub fn early_prepass(
             msaa,
         ),
         (
-            depth_prepass_resolve_pipeline,
             skybox_prepass_pipeline,
             skybox_prepass_bind_group,
             view_prev_uniform_offset,
@@ -86,8 +83,6 @@ pub fn early_prepass(
         view_prepass_textures,
         view_uniform_offset,
         msaa,
-        depth_prepass_resolve_pipeline,
-        blit_pipeline,
         skybox_prepass_pipeline,
         skybox_prepass_bind_group,
         view_prev_uniform_offset,
@@ -104,7 +99,6 @@ pub fn early_prepass(
 pub fn late_prepass(
     world: &World,
     view: ViewQuery<PrepassViewQueryData>,
-    blit_pipeline: Res<BlitPipeline>,
     opaque_prepass_phases: Res<ViewBinnedRenderPhases<Opaque3dPrepass>>,
     alpha_mask_prepass_phases: Res<ViewBinnedRenderPhases<AlphaMask3dPrepass>>,
     pipeline_cache: Res<PipelineCache>,
@@ -121,7 +115,6 @@ pub fn late_prepass(
             msaa,
         ),
         (
-            depth_prepass_resolve_pipeline,
             skybox_prepass_pipeline,
             skybox_prepass_bind_group,
             view_prev_uniform_offset,
@@ -143,8 +136,6 @@ pub fn late_prepass(
         view_prepass_textures,
         view_uniform_offset,
         msaa,
-        depth_prepass_resolve_pipeline,
-        blit_pipeline,
         skybox_prepass_pipeline,
         skybox_prepass_bind_group,
         view_prev_uniform_offset,
@@ -172,8 +163,6 @@ fn run_prepass_system(
     view_prepass_textures: &ViewPrepassTextures,
     view_uniform_offset: &ViewUniformOffset,
     msaa: &Msaa,
-    depth_prepass_resolve_pipeline: Option<&DepthPrepassResolvePipeline>,
-    blit_pipeline: Res<BlitPipeline>,
     skybox_prepass_pipeline: Option<&RenderSkyboxPrepassPipeline>,
     skybox_prepass_bind_group: Option<&SkyboxPrepassBindGroup>,
     view_prev_uniform_offset: Option<&PreviousViewUniformOffset>,
@@ -199,22 +188,13 @@ fn run_prepass_system(
         return;
     };
 
-    let depth_prepass_resolve_pipeline = if let Some(pipeline_id) = depth_prepass_resolve_pipeline {
-        if let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id.0) {
-            Some(pipeline)
-        } else {
-            return;
-        }
-    } else {
-        None
-    };
-
     #[cfg(feature = "trace")]
     let _prepass_span = info_span!("prepass").entered();
 
     let diagnostics = ctx.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();
     let store = if msaa.samples() > 1 {
+        // Discard multisampled textures as them will be resolved.
         StoreOp::Discard
     } else {
         StoreOp::Store
@@ -293,37 +273,65 @@ fn run_prepass_system(
 
     pass_span.end(&mut render_pass);
     drop(render_pass);
+}
 
-    if let Some(pipeline) = depth_prepass_resolve_pipeline
-        && let Some(prepass_depth_texture) = &view_prepass_textures.depth
-    {
-        let bind_group = if msaa.samples() > 1 {
-            blit_pipeline.create_bind_group_multisampled(
-                ctx.render_device(),
-                view_depth_texture.view(),
-                pipeline_cache,
-            )
-        } else {
-            blit_pipeline.create_bind_group(
-                ctx.render_device(),
-                view_depth_texture.view(),
-                pipeline_cache,
-            )
-        };
-        let label = "depth_prepass_resolve";
-        let mut render_pass = ctx.begin_tracked_render_pass(RenderPassDescriptor {
-            label: Some(label),
-            color_attachments: &[Some(prepass_depth_texture.get_attachment(StoreOp::Store))],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        let pass_span = diagnostics.pass_span(&mut render_pass, label);
-        render_pass.set_render_pipeline(pipeline);
-        render_pass.set_bind_group(0, &bind_group, &[]);
-        render_pass.draw(0..3, 0..1);
-        pass_span.end(&mut render_pass);
-        drop(render_pass);
-    }
+pub fn depth_prepass_resolve(
+    view: ViewQuery<
+        (
+            &Msaa,
+            &DepthPrepassResolvePipeline,
+            &ViewDepthTexture,
+            &ViewPrepassTextures,
+        ),
+        With<ExtractedCamera>,
+    >,
+    blit_pipeline: Res<BlitPipeline>,
+    pipeline_cache: Res<PipelineCache>,
+    mut ctx: RenderContext,
+) {
+    let (msaa, depth_prepass_resolve_pipeline, view_depth_texture, view_prepass_textures) =
+        view.into_inner();
+
+    let Some(pipeline) = pipeline_cache.get_render_pipeline(depth_prepass_resolve_pipeline.0)
+    else {
+        return;
+    };
+    let Some(prepass_depth_texture) = &view_prepass_textures.depth else {
+        return;
+    };
+
+    let diagnostics = ctx.diagnostic_recorder();
+    let diagnostics = diagnostics.as_deref();
+
+    let bind_group = if msaa.samples() > 1 {
+        blit_pipeline.create_bind_group_multisampled(
+            ctx.render_device(),
+            view_depth_texture.view(),
+            &pipeline_cache,
+        )
+    } else {
+        blit_pipeline.create_bind_group(
+            ctx.render_device(),
+            view_depth_texture.view(),
+            &pipeline_cache,
+        )
+    };
+    let label = "depth_prepass_resolve";
+
+    // Render depth to prepass depth texture. If depth is multisampled, resolve it.
+    let mut render_pass = ctx.begin_tracked_render_pass(RenderPassDescriptor {
+        label: Some(label),
+        color_attachments: &[Some(prepass_depth_texture.get_attachment(StoreOp::Store))],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    let pass_span = diagnostics.pass_span(&mut render_pass, label);
+    render_pass.set_render_pipeline(pipeline);
+    render_pass.set_bind_group(0, &bind_group, &[]);
+    render_pass.draw(0..3, 0..1);
+
+    pass_span.end(&mut render_pass);
+    drop(render_pass);
 }

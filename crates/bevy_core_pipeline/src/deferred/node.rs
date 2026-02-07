@@ -2,8 +2,7 @@ use bevy_camera::{MainPassResolutionOverride, Viewport};
 use bevy_ecs::prelude::*;
 use bevy_render::occlusion_culling::OcclusionCulling;
 
-use bevy_render::render_resource::PipelineCache;
-use bevy_render::view::{ExtractedView, Msaa, NoIndirectDrawing};
+use bevy_render::view::{ExtractedView, NoIndirectDrawing};
 use bevy_render::{
     camera::ExtractedCamera,
     diagnostic::RecordDiagnostics,
@@ -16,8 +15,7 @@ use tracing::error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
 
-use crate::blit::BlitPipeline;
-use crate::prepass::{DepthPrepassResolvePipeline, ViewPrepassTextures};
+use crate::prepass::ViewPrepassTextures;
 
 use super::{AlphaMask3dDeferred, Opaque3dDeferred};
 
@@ -25,10 +23,8 @@ use super::{AlphaMask3dDeferred, Opaque3dDeferred};
 type DeferredPrepassViewQueryData = (
     &'static ExtractedCamera,
     &'static ExtractedView,
-    &'static Msaa,
     &'static ViewDepthTexture,
     &'static ViewPrepassTextures,
-    Option<&'static DepthPrepassResolvePipeline>,
     Option<&'static MainPassResolutionOverride>,
     Has<OcclusionCulling>,
     Has<NoIndirectDrawing>,
@@ -37,8 +33,6 @@ type DeferredPrepassViewQueryData = (
 pub(crate) fn early_deferred_prepass(
     world: &World,
     view: ViewQuery<DeferredPrepassViewQueryData>,
-    blit_pipeline: Res<BlitPipeline>,
-    pipeline_cache: Res<PipelineCache>,
     opaque_deferred_phases: Res<ViewBinnedRenderPhases<Opaque3dDeferred>>,
     alpha_mask_deferred_phases: Res<ViewBinnedRenderPhases<AlphaMask3dDeferred>>,
     mut ctx: RenderContext,
@@ -47,10 +41,8 @@ pub(crate) fn early_deferred_prepass(
     let (
         camera,
         extracted_view,
-        msaa,
         view_depth_texture,
         view_prepass_textures,
-        depth_prepass_resolve_pipeliine,
         resolution_override,
         _,
         _,
@@ -61,10 +53,6 @@ pub(crate) fn early_deferred_prepass(
         view_entity,
         camera,
         extracted_view,
-        msaa,
-        &blit_pipeline,
-        &pipeline_cache,
-        depth_prepass_resolve_pipeliine,
         view_depth_texture,
         view_prepass_textures,
         resolution_override,
@@ -79,8 +67,6 @@ pub(crate) fn early_deferred_prepass(
 pub fn late_deferred_prepass(
     world: &World,
     view: ViewQuery<DeferredPrepassViewQueryData>,
-    blit_pipeline: Res<BlitPipeline>,
-    pipeline_cache: Res<PipelineCache>,
     opaque_deferred_phases: Res<ViewBinnedRenderPhases<Opaque3dDeferred>>,
     alpha_mask_deferred_phases: Res<ViewBinnedRenderPhases<AlphaMask3dDeferred>>,
     mut ctx: RenderContext,
@@ -89,10 +75,8 @@ pub fn late_deferred_prepass(
     let (
         camera,
         extracted_view,
-        msaa,
         view_depth_texture,
         view_prepass_textures,
-        depth_prepass_resolve_pipeliine,
         resolution_override,
         occlusion_culling,
         no_indirect_drawing,
@@ -107,10 +91,6 @@ pub fn late_deferred_prepass(
         view_entity,
         camera,
         extracted_view,
-        msaa,
-        &blit_pipeline,
-        &pipeline_cache,
-        depth_prepass_resolve_pipeliine,
         view_depth_texture,
         view_prepass_textures,
         resolution_override,
@@ -131,10 +111,6 @@ fn run_deferred_prepass_system(
     view_entity: Entity,
     camera: &ExtractedCamera,
     extracted_view: &ExtractedView,
-    msaa: &Msaa,
-    blit_pipeline: &BlitPipeline,
-    pipeline_cache: &PipelineCache,
-    depth_prepass_resolve_pipeline: Option<&DepthPrepassResolvePipeline>,
     view_depth_texture: &ViewDepthTexture,
     view_prepass_textures: &ViewPrepassTextures,
     resolution_override: Option<&MainPassResolutionOverride>,
@@ -149,16 +125,6 @@ fn run_deferred_prepass_system(
         alpha_mask_deferred_phases.get(&extracted_view.retained_view_entity),
     ) else {
         return;
-    };
-
-    let depth_prepass_resolve_pipeline = if let Some(pipeline_id) = depth_prepass_resolve_pipeline {
-        if let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id.0) {
-            Some(pipeline)
-        } else {
-            return;
-        }
-    } else {
-        None
     };
 
     #[cfg(feature = "trace")]
@@ -279,38 +245,4 @@ fn run_deferred_prepass_system(
 
     pass_span.end(&mut render_pass);
     drop(render_pass);
-
-    // After rendering to the view depth texture, copy it to the prepass depth texture
-    if let Some(pipeline) = depth_prepass_resolve_pipeline
-        && let Some(prepass_depth_texture) = &view_prepass_textures.depth
-    {
-        let bind_group = if msaa.samples() > 1 {
-            blit_pipeline.create_bind_group_multisampled(
-                ctx.render_device(),
-                view_depth_texture.view(),
-                pipeline_cache,
-            )
-        } else {
-            blit_pipeline.create_bind_group(
-                ctx.render_device(),
-                view_depth_texture.view(),
-                pipeline_cache,
-            )
-        };
-        let label = "deferred_depth_prepass_resolve";
-        let mut render_pass = ctx.begin_tracked_render_pass(RenderPassDescriptor {
-            label: Some(label),
-            color_attachments: &[Some(prepass_depth_texture.get_attachment(StoreOp::Store))],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        let pass_span = diagnostics.pass_span(&mut render_pass, label);
-        render_pass.set_render_pipeline(pipeline);
-        render_pass.set_bind_group(0, &bind_group, &[]);
-        render_pass.draw(0..3, 0..1);
-        pass_span.end(&mut render_pass);
-        drop(render_pass);
-    }
 }
