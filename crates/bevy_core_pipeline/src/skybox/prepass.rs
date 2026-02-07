@@ -12,8 +12,8 @@ use bevy_light::Skybox;
 use bevy_render::{
     render_resource::{
         binding_types::uniform_buffer, BindGroup, BindGroupEntries, BindGroupLayoutDescriptor,
-        BindGroupLayoutEntries, CachedRenderPipelineId, ColorTargetState, ColorWrites,
-        CompareFunction, DepthStencilState, FragmentState, MultisampleState, PipelineCache,
+        BindGroupLayoutEntries, CachedRenderPipelineId, ColorWrites, CompareFunction,
+        DepthStencilState, FragmentState, MultisampleState, PipelineCache,
         RenderPipelineDescriptor, ShaderStages, SpecializedRenderPipeline,
         SpecializedRenderPipelines,
     },
@@ -26,8 +26,8 @@ use bevy_utils::prelude::default;
 use crate::{
     core_3d::CORE_3D_DEPTH_FORMAT,
     prepass::{
-        MotionVectorPrepass, NormalPrepass, PreviousViewData, PreviousViewUniforms,
-        MOTION_VECTOR_PREPASS_FORMAT, NORMAL_PREPASS_FORMAT,
+        prepass_target_descriptors, MotionVectorPrepass, NormalPrepass, PreviousViewData,
+        PreviousViewUniforms,
     },
     FullscreenShader,
 };
@@ -86,6 +86,11 @@ impl SpecializedRenderPipeline for SkyboxPrepassPipeline {
     type Key = SkyboxPrepassPipelineKey;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
+        let mut targets = prepass_target_descriptors(key.normal_prepass, true, false);
+        if let Some(normal) = &mut targets[0] {
+            // skybox prepass doesn't write normal, set it empty to avoid WebGPU validation error.
+            normal.write_mask = ColorWrites::empty();
+        }
         RenderPipelineDescriptor {
             label: Some("skybox_prepass_pipeline".into()),
             layout: vec![self.bind_group_layout.clone()],
@@ -104,18 +109,7 @@ impl SpecializedRenderPipeline for SkyboxPrepassPipeline {
             },
             fragment: Some(FragmentState {
                 shader: self.fragment_shader.clone(),
-                targets: vec![
-                    key.normal_prepass.then_some(ColorTargetState {
-                        format: NORMAL_PREPASS_FORMAT,
-                        blend: None,
-                        write_mask: ColorWrites::empty(),
-                    }),
-                    Some(ColorTargetState {
-                        format: MOTION_VECTOR_PREPASS_FORMAT,
-                        blend: None,
-                        write_mask: ColorWrites::ALL,
-                    }),
-                ],
+                targets,
                 ..default()
             }),
             ..default()
