@@ -17,7 +17,7 @@ use bevy_ecs::{
 };
 use bevy_image::{BevyDefault as _, ToExtents};
 use bevy_math::vec2;
-use bevy_post_process::{bloom::bloom, motion_blur::node::motion_blur};
+use bevy_post_process::{bloom::bloom, motion_blur::motion_blur};
 use bevy_reflect::{std_traits::ReflectDefault, Reflect};
 use bevy_render::{
     camera::{ExtractedCamera, MipBias, TemporalJitter},
@@ -33,7 +33,7 @@ use bevy_render::{
         Variants,
     },
     renderer::{RenderContext, RenderDevice, ViewQuery},
-    sync_component::SyncComponentPlugin,
+    sync_component::{SyncComponent, SyncComponentPlugin},
     sync_world::RenderEntity,
     texture::{CachedTexture, TextureCache},
     view::{prepare_view_targets, ExtractedView, Msaa, ViewDepthTexture, ViewTarget},
@@ -143,6 +143,10 @@ impl Default for TemporalAntiAliasing {
     fn default() -> Self {
         Self { reset: true }
     }
+}
+
+impl SyncComponent for TemporalAntiAliasing {
+    type Out = Self;
 }
 
 fn temporal_anti_alias(
