@@ -39,7 +39,7 @@ use bevy_render::{
     renderer::{RenderAdapter, RenderContext, RenderDevice, RenderQueue, ViewQuery},
     sync_component::SyncComponent,
     texture::GpuImage,
-    view::{ExtractedView, Msaa, ViewTarget, ViewUniformOffset},
+    view::{ExtractedView, ViewTarget, ViewUniformOffset},
     Render, RenderApp, RenderStartup, RenderSystems,
 };
 use bevy_shader::{load_shader_library, Shader};

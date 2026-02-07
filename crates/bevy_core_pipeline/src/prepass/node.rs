@@ -16,6 +16,7 @@ use tracing::info_span;
 use crate::{
     blit::BlitPipeline,
     prepass::DepthPrepassResolvePipeline,
+    resolve::ResolvePipeline,
     skybox::prepass::{RenderSkyboxPrepassPipeline, SkyboxPrepassBindGroup},
 };
 
@@ -285,6 +286,7 @@ pub fn depth_prepass_resolve(
         ),
         With<ExtractedCamera>,
     >,
+    resolve_pipeline: Res<ResolvePipeline>,
     blit_pipeline: Res<BlitPipeline>,
     pipeline_cache: Res<PipelineCache>,
     mut ctx: RenderContext,
@@ -304,7 +306,7 @@ pub fn depth_prepass_resolve(
     let diagnostics = diagnostics.as_deref();
 
     let bind_group = if msaa.samples() > 1 {
-        blit_pipeline.create_bind_group_multisampled(
+        resolve_pipeline.create_bind_group(
             ctx.render_device(),
             view_depth_texture.view(),
             &pipeline_cache,

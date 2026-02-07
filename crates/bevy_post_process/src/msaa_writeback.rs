@@ -115,9 +115,8 @@ fn prepare_msaa_writeback_pipelines(
         if msaa.samples() > 1 && should_writeback {
             let key = BlitPipelineKey {
                 texture_format: view_target.main_texture_format(),
-                target_samples: msaa.samples(),
+                samples: msaa.samples(),
                 blend_state: None,
-                src_multisampled: false,
             };
 
             let pipeline = pipelines.specialize(&pipeline_cache, &blit_pipeline, key);
