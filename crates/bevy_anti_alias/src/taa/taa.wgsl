@@ -162,7 +162,7 @@ fn taa(@location(0) uv: vec2<f32>) -> Output {
     history_color = YCoCg_to_RGB(history_color);
 
     // How confident we are that the history is representative of the current frame
-    var history_confidence = textureSample(history, nearest_sampler, uv).a;
+    var history_confidence = textureSample(history, linear_sampler, uv).a;
     let pixel_motion_vector = abs(closest_motion_vector) * texture_size;
     if pixel_motion_vector.x < 0.01 && pixel_motion_vector.y < 0.01 {
         // Increment when pixels are not moving

@@ -19,6 +19,7 @@ use bevy_render::{
         TextureSampleType,
     },
     renderer::RenderDevice,
+    settings::WgpuFeatures,
     view::{ExtractedView, ViewTarget},
 };
 use bevy_shader::Shader;
@@ -40,6 +41,9 @@ impl MotionBlurPipeline {
         fullscreen_shader: FullscreenShader,
         fragment_shader: Handle<Shader>,
     ) -> Self {
+        let depth_filterable = render_device
+            .features()
+            .contains(WgpuFeatures::FLOAT32_FILTERABLE);
         let mb_layout = &BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
             (
@@ -47,8 +51,10 @@ impl MotionBlurPipeline {
                 texture_2d(TextureSampleType::Float { filterable: true }),
                 // Motion Vectors
                 texture_2d(TextureSampleType::Float { filterable: true }),
-                // Depth, requires [`bevy_render::settings::WgpuFeatures::FLOAT32_FILTERABLE`].
-                texture_2d(TextureSampleType::Float { filterable: true }),
+                // Depth
+                texture_2d(TextureSampleType::Float {
+                    filterable: depth_filterable,
+                }),
                 // Linear Sampler
                 sampler(SamplerBindingType::Filtering),
                 // Motion blur settings uniform input
@@ -57,10 +63,14 @@ impl MotionBlurPipeline {
                 uniform_buffer_sized(false, Some(GlobalsUniform::min_size())),
             ),
         );
-
+        let filter_mode = if depth_filterable {
+            FilterMode::Linear
+        } else {
+            FilterMode::Nearest
+        };
         let sampler = render_device.create_sampler(&SamplerDescriptor {
-            min_filter: FilterMode::Linear,
-            mag_filter: FilterMode::Linear,
+            min_filter: filter_mode,
+            mag_filter: filter_mode,
             ..Default::default()
         });
         let layout = BindGroupLayoutDescriptor::new("motion_blur_layout", mb_layout);
@@ -99,12 +109,10 @@ impl SpecializedRenderPipeline for MotionBlurPipeline {
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
         let layout = vec![self.layout.clone()];
-
+        #[cfg(not(all(feature = "webgl", target_arch = "wasm32", not(feature = "webgpu"))))]
+        let shader_defs = vec![];
         #[cfg(all(feature = "webgl", target_arch = "wasm32", not(feature = "webgpu")))]
-        {
-            shader_defs.push("NO_DEPTH_TEXTURE_SUPPORT".into());
-            shader_defs.push("SIXTEEN_BYTE_ALIGNMENT".into());
-        }
+        let shader_defs = vec!["SIXTEEN_BYTE_ALIGNMENT".into()];
 
         RenderPipelineDescriptor {
             label: Some("motion_blur_pipeline".into()),
@@ -112,6 +120,7 @@ impl SpecializedRenderPipeline for MotionBlurPipeline {
             vertex: self.fullscreen_shader.to_vertex_state(),
             fragment: Some(FragmentState {
                 shader: self.fragment_shader.clone(),
+                shader_defs,
                 targets: vec![Some(ColorTargetState {
                     format: if key.hdr {
                         ViewTarget::TEXTURE_FORMAT_HDR

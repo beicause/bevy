@@ -32,7 +32,6 @@
 @group(2) @binding(3) var depth_nearest_sampler: sampler;
 #endif
 
-// Manual depth fetch helpers used on WebGPU where depth + filtering sampler is invalid.
 #ifndef USE_DEPTH_SAMPLERS
 fn depth_texel_clamped(texel: vec2<i32>) -> f32 {
     let dims = textureDimensions(depth_prepass_texture);
@@ -65,7 +64,11 @@ fn depth_sample_bilinear_clamped(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
 
 fn depth_sample_linear(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
 #ifdef USE_DEPTH_SAMPLERS
+#ifdef DEPTH_FILTERABLE
     return textureSampleLevel(depth_prepass_texture, depth_linear_sampler, uv, 0.0).r;
+#else
+    return depth_sample_bilinear_clamped(uv, tex_size);
+#endif
 #else
     return depth_sample_bilinear_clamped(uv, tex_size);
 #endif

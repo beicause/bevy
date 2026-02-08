@@ -50,7 +50,7 @@
 // The sampler that lets us sample from the color framebuffer.
 @group(2) @binding(1) var color_sampler: sampler;
 
-// Group 1, bindings 2 and 3 are in `raymarch.wgsl`.
+// Group 2, bindings 2 and 3 are in `raymarch.wgsl`.
 
 @group(2) @binding(4) var stbn_texture: texture_2d_array<f32>;
 

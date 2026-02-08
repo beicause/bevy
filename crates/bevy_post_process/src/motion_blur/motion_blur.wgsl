@@ -28,13 +28,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let shutter_angle = settings.shutter_angle;
     let this_motion_vector = textureSample(motion_vectors, texture_sampler, in.uv).rg;
 
-#ifdef NO_DEPTH_TEXTURE_SUPPORT
-    let this_depth = 0.0;
-    let depth_supported = false;
-#else
-    let depth_supported = true;
     let this_depth = textureSample(depth, texture_sampler, in.uv).r;
-#endif
 
     // The exposure vector is the distance that this fragment moved while the camera shutter was
     // open. This is the motion vector (total distance traveled) multiplied by the shutter angle (a
@@ -65,14 +59,10 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 
         let sample_color = textureSample(screen_texture, texture_sampler, sample_uv);
         let sample_motion = textureSample(motion_vectors, texture_sampler, sample_uv).rg;
-    #ifdef NO_DEPTH_TEXTURE_SUPPORT
-        let sample_depth = 0.0;
-    #else
         let sample_depth = textureSample(depth, texture_sampler, sample_uv).r;
-    #endif
 
         var weight = 1.0;
-        let is_sample_in_fg = !(depth_supported && sample_depth < this_depth && sample_depth > 0.0);
+        let is_sample_in_fg = !(sample_depth < this_depth && sample_depth > 0.0);
         // If the depth is 0.0, this fragment has no depth written to it and we assume it is in the
         // background. This ensures that things like skyboxes, which do not write to depth, are
         // correctly sampled in motion blur.

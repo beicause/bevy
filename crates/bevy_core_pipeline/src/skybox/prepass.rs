@@ -13,11 +13,11 @@ use bevy_render::{
     render_resource::{
         binding_types::uniform_buffer, BindGroup, BindGroupEntries, BindGroupLayoutDescriptor,
         BindGroupLayoutEntries, CachedRenderPipelineId, ColorWrites, CompareFunction,
-        DepthStencilState, FragmentState, MultisampleState, PipelineCache,
+        DepthStencilState, DownlevelFlags, FragmentState, MultisampleState, PipelineCache,
         RenderPipelineDescriptor, ShaderStages, SpecializedRenderPipeline,
         SpecializedRenderPipelines,
     },
-    renderer::RenderDevice,
+    renderer::{RenderAdapter, RenderDevice},
     view::{Msaa, ViewUniform, ViewUniforms},
 };
 use bevy_shader::Shader;
@@ -88,7 +88,8 @@ impl SpecializedRenderPipeline for SkyboxPrepassPipeline {
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
         let mut targets = prepass_target_descriptors(key.normal_prepass, true, false);
         if let Some(normal) = &mut targets[0] {
-            // skybox prepass doesn't write normal, set it empty to avoid WebGPU validation error.
+            // Skybox prepass doesn't write normal, set it empty to avoid WebGPU validation error.
+            // This requires `DownlevelFlags::INDEPENDENT_BLEND`. WebGL2 doesn't support it.
             normal.write_mask = ColorWrites::empty();
         }
         RenderPipelineDescriptor {
@@ -124,7 +125,15 @@ pub fn prepare_skybox_prepass_pipelines(
     mut pipelines: ResMut<SpecializedRenderPipelines<SkyboxPrepassPipeline>>,
     pipeline: Res<SkyboxPrepassPipeline>,
     views: Query<(Entity, Has<NormalPrepass>, &Msaa), (With<Skybox>, With<MotionVectorPrepass>)>,
+    render_adapter: Res<RenderAdapter>,
 ) {
+    if !render_adapter
+        .get_downlevel_capabilities()
+        .flags
+        .contains(DownlevelFlags::INDEPENDENT_BLEND)
+    {
+        return;
+    }
     for (entity, normal_prepass, msaa) in &views {
         let pipeline_key = SkyboxPrepassPipelineKey {
             samples: msaa.samples(),
@@ -150,7 +159,15 @@ pub fn prepare_skybox_prepass_bind_groups(
     render_device: Res<RenderDevice>,
     pipeline_cache: Res<PipelineCache>,
     views: Query<Entity, (With<Skybox>, With<MotionVectorPrepass>)>,
+    render_adapter: Res<RenderAdapter>,
 ) {
+    if !render_adapter
+        .get_downlevel_capabilities()
+        .flags
+        .contains(DownlevelFlags::INDEPENDENT_BLEND)
+    {
+        return;
+    }
     for entity in &views {
         let (Some(view_uniforms), Some(prev_view_uniforms)) = (
             view_uniforms.uniforms.binding(),
