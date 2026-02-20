@@ -167,8 +167,8 @@ impl Plugin for MotionBlurPlugin {
                 (
                     pipeline::prepare_motion_blur_pipelines.in_set(RenderSystems::Prepare),
                     prepare_view_depth_texture_usages_for_motion_blur
-                        .after(prepare_view_targets)
-                        .in_set(RenderSystems::ManageViews),
+                        .in_set(RenderSystems::PrepareViews)
+                        .after(prepare_view_targets),
                 ),
             );
 
