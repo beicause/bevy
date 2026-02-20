@@ -33,6 +33,7 @@ members = [
   # Examples of large bevy scenes.
   "examples/large_scenes/bistro",
   "examples/large_scenes/caldera_hotel",
+  "examples/large_scenes/bevy_city",
   # Mipmap generator for testing large bevy scenes with mips and texture compression.
   "examples/large_scenes/mipmap_generator",
   # Benchmarks
@@ -163,6 +164,7 @@ ui = [
   "scene",
   "audio",
   "picking",
+  "bevy_ui_widgets",
 ]
 
 # COLLECTION: Enable this feature during development to improve the development experience. This adds features like asset hot-reloading and debugging tools. This should not be enabled for published apps!
@@ -178,7 +180,7 @@ audio = ["bevy_audio", "vorbis"]
 # COLLECTION: Features used to compose Bevy scenes.
 scene = ["bevy_scene"]
 
-# COLLECTION: Enables picking functionality.
+# COLLECTION: Enables picking with all backends.
 picking = ["bevy_picking", "mesh_picking", "sprite_picking", "ui_picking"]
 
 # COLLECTION: The core pieces that most apps need. This serves as a baseline feature set for other higher level feature collections (such as "2d" and "3d"). It is also useful as a baseline feature set for scenarios like headless apps that require no rendering (ex: command line tools, servers, etc).
@@ -324,7 +326,7 @@ bevy_gltf = ["bevy_internal/bevy_gltf"]
 # Adds PBR rendering
 bevy_pbr = ["bevy_internal/bevy_pbr"]
 
-# Provides picking functionality
+# Provides picking functionality without any backend
 bevy_picking = ["bevy_internal/bevy_picking"]
 
 # Provides rendering functionality
@@ -405,14 +407,11 @@ bevy_log = ["bevy_internal/bevy_log"]
 # Enable input focus subsystem
 bevy_input_focus = ["bevy_internal/bevy_input_focus"]
 
-# Experimental headless widget collection for Bevy UI.
-experimental_bevy_ui_widgets = ["bevy_internal/bevy_ui_widgets"]
+# Headless widget collection for Bevy UI.
+bevy_ui_widgets = ["bevy_internal/bevy_ui_widgets"]
 
 # Feathers widget collection.
-experimental_bevy_feathers = [
-  "bevy_internal/bevy_feathers",
-  "experimental_bevy_ui_widgets",
-]
+experimental_bevy_feathers = ["bevy_internal/bevy_feathers", "bevy_ui_widgets"]
 
 # Enable passthrough loading for SPIR-V shaders (Only supported on Vulkan, shader capabilities and extensions must agree with the platform implementation)
 spirv_shader_passthrough = ["bevy_internal/spirv_shader_passthrough"]
@@ -594,6 +593,9 @@ debug_glam_assert = ["bevy_internal/debug_glam_assert"]
 # Include a default font, containing only ASCII characters, at the cost of a 20kB binary size increase
 default_font = ["bevy_internal/default_font"]
 
+# Allows for discovery of preloaded system fonts
+system_font_discovery = ["bevy_internal/system_font_discovery"]
+
 # Enable support for shaders in GLSL
 shader_format_glsl = ["bevy_internal/shader_format_glsl"]
 
@@ -731,8 +733,8 @@ tracing = { version = "0.1", default-features = false, optional = true }
 bevy_dylib = { path = "crates/bevy_dylib", version = "0.19.0-dev", default-features = false, optional = true }
 
 [dev-dependencies]
-rand = "0.9.0"
-rand_chacha = "0.9.0"
+rand = "0.10.0"
+chacha20 = { version = "0.10.0", default-features = false, features = ["rng"] }
 ron = "0.12"
 flate2 = "1.0"
 serde = { version = "1", features = ["derive"] }
@@ -755,15 +757,16 @@ argh = "0.1.12"
 thiserror = "2.0"
 event-listener = "5.3.0"
 anyhow = "1"
-accesskit = "0.23"
+accesskit = "0.24"
 nonmax = "0.5"
 gltf = "1.4"
+indexmap = "2"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 ureq = { version = "3.0.8", features = ["json"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-getrandom = { version = "0.3", default-features = false, features = [
+getrandom = { version = "0.4", default-features = false, features = [
   "wasm_js",
 ] }
 wasm-bindgen = { version = "0.2" }
@@ -2033,7 +2036,7 @@ wasm = false
 name = "asset_saving"
 path = "examples/asset/asset_saving.rs"
 doc-scrape-examples = true
-required-features = ["bevy_picking", "sprite_picking"]
+required-features = ["ui_picking", "sprite_picking"]
 
 [package.metadata.example.asset_saving]
 name = "Asset Saving"
@@ -3517,6 +3520,17 @@ category = "Stress Tests"
 wasm = true
 
 [[example]]
+name = "many_morph_targets"
+path = "examples/stress_tests/many_morph_targets.rs"
+doc-scrape-examples = true
+
+[package.metadata.example.many_morph_targets]
+name = "Many Morph Targets"
+description = "Simple benchmark to test rendering many meshes with animated morph targets."
+category = "Stress Tests"
+wasm = true
+
+[[example]]
 name = "many_glyphs"
 path = "examples/stress_tests/many_glyphs.rs"
 # Causes an ICE on docs.rs
@@ -3845,7 +3859,6 @@ name = "vertical_slider"
 path = "examples/ui/widgets/vertical_slider.rs"
 # Causes an ICE on docs.rs
 doc-scrape-examples = false
-required-features = ["experimental_bevy_ui_widgets"]
 
 [package.metadata.example.vertical_slider]
 name = "Vertical Slider"
@@ -3954,6 +3967,7 @@ name = "generic_font_families"
 path = "examples/ui/text/generic_font_families.rs"
 # Causes an ICE on docs.rs
 doc-scrape-examples = false
+required-features = ["system_font_discovery"]
 
 [package.metadata.example.generic_font_families]
 name = "Generic Font Families"
@@ -4558,6 +4572,68 @@ category = "Gizmos"
 wasm = true
 
 [[example]]
+name = "2d_text_gizmos"
+path = "examples/gizmos/2d_text_gizmos.rs"
+# Causes an ICE on docs.rs
+doc-scrape-examples = false
+
+[package.metadata.example.2d_text_gizmos]
+name = "Text Gizmos 2d"
+description = "A scene showcasing 2d text gizmos"
+category = "Gizmos"
+wasm = true
+
+[[example]]
+name = "anchored_text_gizmos"
+path = "examples/gizmos/anchored_text_gizmos.rs"
+# Causes an ICE on docs.rs
+doc-scrape-examples = false
+
+[package.metadata.example.anchored_text_gizmos]
+name = "Anchored Text Gizmos"
+description = "Demonstrates anchored text gizmos"
+category = "Gizmos"
+wasm = true
+
+[[example]]
+name = "3d_text_gizmos"
+path = "examples/gizmos/3d_text_gizmos.rs"
+# Causes an ICE on docs.rs
+doc-scrape-examples = false
+
+[package.metadata.example.3d_text_gizmos]
+name = "Text Gizmos 3d"
+description = "A scene showcasing 3d text gizmos"
+category = "Gizmos"
+wasm = true
+
+[[example]]
+name = "text_gizmos_font"
+path = "examples/gizmos/text_gizmos_font.rs"
+# Causes an ICE on docs.rs
+doc-scrape-examples = false
+
+[package.metadata.example.text_gizmos_font]
+name = "Text Gizmos Font"
+description = "Example displaying the font used by text gizmos"
+category = "Gizmos"
+wasm = true
+
+[[example]]
+name = "debug_frustum_culling"
+path = "examples/usage/debug_frustum_culling.rs"
+# Causes an ICE on docs.rs
+doc-scrape-examples = false
+required-features = ["free_camera"]
+
+[package.metadata.example.debug_frustum_culling]
+name = "Debug Frustum Culling"
+description = "Example demonstrating how to debug frustum culling"
+category = "Usage"
+wasm = true
+
+
+[[example]]
 name = "custom_gltf_vertex_attribute"
 path = "examples/gltf/custom_gltf_vertex_attribute.rs"
 # Causes an ICE on docs.rs
@@ -4985,7 +5061,7 @@ name = "simple_picking"
 path = "examples/picking/simple_picking.rs"
 # Causes an ICE on docs.rs
 doc-scrape-examples = false
-required-features = ["bevy_picking"]
+required-features = ["ui_picking"]
 
 [package.metadata.example.simple_picking]
 name = "Showcases simple picking events and usage"
@@ -5197,7 +5273,6 @@ name = "testbed_full_ui"
 path = "examples/testbed/full_ui.rs"
 # Causes an ICE on docs.rs
 doc-scrape-examples = false
-required-features = ["experimental_bevy_ui_widgets"]
 
 [package.metadata.example.testbed_full_ui]
 hidden = true
@@ -5343,7 +5418,6 @@ name = "standard_widgets"
 path = "examples/ui/widgets/standard_widgets.rs"
 # Causes an ICE on docs.rs
 doc-scrape-examples = false
-required-features = ["experimental_bevy_ui_widgets"]
 
 [package.metadata.example.standard_widgets]
 name = "Standard Widgets"
@@ -5356,7 +5430,6 @@ name = "standard_widgets_observers"
 path = "examples/ui/widgets/standard_widgets_observers.rs"
 # Causes an ICE on docs.rs
 doc-scrape-examples = false
-required-features = ["experimental_bevy_ui_widgets"]
 
 [package.metadata.example.standard_widgets_observers]
 name = "Standard Widgets (w/Observers)"
@@ -5369,7 +5442,6 @@ name = "scrollbars"
 path = "examples/ui/scroll_and_overflow/scrollbars.rs"
 # Causes an ICE on docs.rs
 doc-scrape-examples = false
-required-features = ["experimental_bevy_ui_widgets"]
 
 [package.metadata.example.scrollbars]
 name = "Scrollbars"
@@ -5381,6 +5453,7 @@ wasm = true
 name = "system_fonts"
 path = "examples/ui/text/system_fonts.rs"
 doc-scrape-examples = true
+required-features = ["system_font_discovery"]
 
 [package.metadata.example.system_fonts]
 name = "System Fonts"
