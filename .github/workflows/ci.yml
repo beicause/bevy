@@ -56,7 +56,7 @@ jobs:
         uses: ./.github/actions/install-linux-deps
       - name: Build & run tests
         # See tools/ci/src/main.rs for the commands this runs
-        run: cargo test -p bevy_color --all-features --all-targets -- --show-output
+        run: cargo run -p ci -- test
         env:
           RUSTFLAGS: "-C debuginfo=0 -D warnings"
 
