@@ -400,12 +400,9 @@ mod tests {
                 color.rgb,
                 rgb2,
             );
-            let msg = alloc::format!(
-                "{}: expected {:?}, got {:?}",
-                color.name,
-                color.okhsv,
-                okhsv
-            );
+            let msg = alloc::format!("{}: {:?} vs {:?}", color.name, color.okhsv, okhsv);
+            std::println!("{}: {:?} vs {:?}", color.name, color.rgb, rgb2);
+            std::println!("{}\n", msg);
             assert_approx_eq!(color.okhsv.hue, okhsv.hue, 0.001, msg);
             assert_approx_eq!(color.okhsv.saturation, okhsv.saturation, 0.001, msg);
             assert_approx_eq!(color.okhsv.value, okhsv.value, 0.001, msg);
