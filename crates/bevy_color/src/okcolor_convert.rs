@@ -300,7 +300,7 @@ pub(crate) fn oklab_to_okhsl(value: Oklaba) -> Okhsla {
     } = value;
     let C = ops::sqrt(lab_a * lab_a + lab_b * lab_b);
     // Patch: Fixes NaN for pure black and white colors.
-    if C < core::f32::EPSILON {
+    if C < f32::EPSILON {
         let l = toe(lab_l);
         return Okhsla {
             hue: 0.,
@@ -407,7 +407,7 @@ pub(crate) fn oklab_to_okhsv(value: Oklaba) -> Okhsva {
     } = value;
     let C = ops::sqrt(lab_a * lab_a + lab_b * lab_b);
     // Patch: Fixes NaN for pure black and white colors.
-    if C < core::f32::EPSILON {
+    if C < f32::EPSILON {
         // In this case, value is equal to lightness.
         let l = toe(lab_l);
         return Okhsva {
