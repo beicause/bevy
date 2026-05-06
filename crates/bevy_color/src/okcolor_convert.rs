@@ -1,6 +1,8 @@
 //! Functions for Okhsl/Okhsv <-> Oklab conversion.
 //! See <https://github.com/bottosson/bottosson.github.io/blob/master/misc/ok_color.h>
 
+// See `Patch` comments for how this differs from original `ok_color.h`
+
 #![expect(
     non_snake_case,
     reason = "The code is translated from a C implementation."
