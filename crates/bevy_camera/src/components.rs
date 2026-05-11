@@ -1,9 +1,11 @@
 use crate::{primitives::Frustum, Camera, CameraProjection, OrthographicProjection, Projection};
 use bevy_ecs::prelude::*;
+use bevy_math::UVec2;
 use bevy_reflect::{std_traits::ReflectDefault, Reflect, ReflectDeserialize, ReflectSerialize};
 use bevy_transform::prelude::{GlobalTransform, Transform};
 use serde::{Deserialize, Serialize};
-use wgpu_types::{LoadOp, TextureUsages};
+use smallvec::SmallVec;
+use wgpu_types::{LoadOp, TextureFormat, TextureUsages};
 
 /// A 2D camera component. Enables the 2D render graph for a [`Camera`].
 #[derive(Component, Default, Reflect, Clone)]
@@ -80,13 +82,20 @@ impl From<Camera3dDepthLoadOp> for LoadOp<f32> {
     }
 }
 
-/// If this component is added to a camera, the camera will use an intermediate "high dynamic range" render texture.
-/// This allows rendering with a wider range of lighting values. However, this does *not* affect
-/// whether the camera will render with hdr display output (which bevy does not support currently)
-/// and only affects the intermediate render texture.
+/// Configure the tonemap mode.
 #[derive(Component, Default, Copy, Clone, Reflect, PartialEq, Eq, Hash, Debug)]
 #[reflect(Component, Default, PartialEq, Hash, Debug)]
-pub struct Hdr;
+pub enum TonemapMode {
+    /// Tonemapping will be applied in the fragment shader of each material,
+    /// which allows rendering HDR colors to LDR format color target,
+    /// but the result of transparency blending may not be physically correct.
+    #[default]
+    InShader,
+    /// Tonemapping will be done as a post process render pass.
+    /// The color target should have sufficient dynamic range (such as `Rgba16Float`, `Rg11b10Ufloat`),
+    /// otherwise HDR colors will be clipped during main pass.
+    PostProcess,
+}
 
 /// Color space for alpha compositing. Affects how overlapping semi-transparent layers blend.
 #[derive(Component, Copy, Clone, Reflect, PartialEq, Eq, Hash, Debug, Default)]
@@ -99,4 +108,61 @@ pub enum CompositingSpace {
     Linear,
     /// Perceptually uniform blending. Often smoother gradients. Requires [`Hdr`] because its value can be outside [0, 1].
     Oklab,
+}
+
+/// The intermediate color target texture (not the [`crate::RenderTarget`]) that can be used for cameras.
+#[derive(Component, Clone, Reflect, PartialEq, Eq, Hash, Debug)]
+#[reflect(Component, PartialEq, Hash, Debug, Default)]
+pub struct ColorTarget {
+    /// The label prefix of the texture.
+    pub label: Option<alloc::borrow::Cow<'static, str>>,
+    /// Size of the texture.
+    pub size: UVec2,
+    /// Sample count of the multisampled texture if this is larger than 1.
+    pub sample_count: u32,
+    /// Format of the texture.
+    pub format: TextureFormat,
+    /// Allowed usages of the texture.
+    pub usage: TextureUsages,
+    /// Specifies what view formats will be allowed when creating texture view on this texture.
+    /// View formats of the same format as the texture are always allowed.
+    /// Note: currently, only the srgb-ness is allowed to change.
+    pub view_formats: SmallVec<[TextureFormat; 1]>,
+}
+
+impl Default for ColorTarget {
+    fn default() -> Self {
+        Self {
+            label: Some("main_texture".into()),
+            size: UVec2::new(1280, 720),
+            sample_count: 4,
+            format: TextureFormat::Rgba8UnormSrgb,
+            usage: TextureUsages::RENDER_ATTACHMENT
+                | TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_SRC,
+            view_formats: SmallVec::new(),
+        }
+    }
+}
+
+/// The color target used by this camera.
+#[derive(Component, Clone, Reflect, PartialEq, Eq, Hash, Debug)]
+#[reflect(Component, PartialEq, Hash, Debug, Default)]
+pub enum CameraColorTarget {
+    Owned(ColorTarget),
+    Reference(Entity),
+}
+
+impl Default for CameraColorTarget {
+    fn default() -> Self {
+        Self::Owned(ColorTarget::default())
+    }
+}
+
+/// Configure the texture view of the color target used by this camera.
+#[derive(Component, Copy, Clone, Reflect, PartialEq, Eq, Hash, Debug, Default)]
+#[reflect(Component, PartialEq, Hash, Debug, Default)]
+pub struct CameraColorTargetTextureView {
+    /// The format of the texture view. If None the view format will be equal to texture format.
+    pub format: Option<TextureFormat>,
 }

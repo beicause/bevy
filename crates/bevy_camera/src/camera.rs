@@ -1,11 +1,9 @@
-use crate::primitives::Frustum;
-
 use super::{
     visibility::{Visibility, VisibleEntities},
     ClearColorConfig, MsaaWriteback,
 };
+use crate::{primitives::Frustum, CameraColorTarget, CameraColorTargetTextureView, TonemapMode};
 use bevy_asset::Handle;
-use bevy_derive::Deref;
 use bevy_ecs::{
     component::Component, entity::Entity, reflect::ReflectComponent, template::FromTemplate,
 };
@@ -17,7 +15,7 @@ use bevy_window::{NormalizedWindowRef, WindowRef};
 use core::ops::Range;
 use derive_more::derive::From;
 use thiserror::Error;
-use wgpu_types::{BlendState, TextureUsages};
+use wgpu_types::BlendState;
 
 /// Render viewport configuration for the [`Camera`] component.
 ///
@@ -27,7 +25,7 @@ use wgpu_types::{BlendState, TextureUsages};
 ///
 /// <div class="warning">
 ///
-/// Note that the physical position is in actual screen coordinates and not virtual pixels for window targets.  
+/// Note that the physical position is in actual screen coordinates and not virtual pixels for window targets.
 /// You should use the scaling factor reported by the window, which on some OS's defaults to a value other than 1.
 /// Please see the example code (which assumes a single camera and window)
 ///
@@ -114,34 +112,7 @@ impl Viewport {
             }
         }
     }
-
-    pub fn from_viewport_and_override(
-        viewport: Option<&Self>,
-        main_pass_resolution_override: Option<&MainPassResolutionOverride>,
-    ) -> Option<Self> {
-        if let Some(override_size) = main_pass_resolution_override {
-            let mut vp = viewport.map_or_else(Self::default, Self::clone);
-            vp.physical_size = **override_size;
-            Some(vp)
-        } else {
-            viewport.cloned()
-        }
-    }
 }
-
-/// Override the resolution a 3d camera's main pass is rendered at.
-///
-/// Does not affect post processing.
-///
-/// ## Usage
-///
-/// * Insert this component on a 3d camera entity in the render world.
-/// * The resolution override must be smaller than the camera's viewport size.
-/// * The resolution override is specified in physical pixels.
-/// * In shaders, use `View::main_pass_viewport` instead of `View::viewport`.
-#[derive(Component, Reflect, Deref, Debug)]
-#[reflect(Component)]
-pub struct MainPassResolutionOverride(pub UVec2);
 
 /// Settings to define a camera sub view.
 ///
@@ -375,11 +346,13 @@ pub enum ViewportConversionError {
 #[reflect(Component, Default, Debug, Clone)]
 #[require(
     Frustum,
-    CameraMainTextureUsages,
     VisibleEntities,
     Transform,
     Visibility,
-    RenderTarget
+    RenderTarget,
+    TonemapMode,
+    CameraColorTarget,
+    CameraColorTargetTextureView
 )]
 pub struct Camera {
     /// If set, this camera will render to the given [`Viewport`] rectangle within the configured [`RenderTarget`].
@@ -992,29 +965,6 @@ impl From<Handle<Image>> for ImageRenderTarget {
 impl Default for RenderTarget {
     fn default() -> Self {
         Self::Window(Default::default())
-    }
-}
-
-/// This component lets you control the [`TextureUsages`] field of the main texture generated for the camera
-#[derive(Component, Clone, Copy, Reflect)]
-#[reflect(opaque)]
-#[reflect(Component, Default, Clone)]
-pub struct CameraMainTextureUsages(pub TextureUsages);
-
-impl Default for CameraMainTextureUsages {
-    fn default() -> Self {
-        Self(
-            TextureUsages::RENDER_ATTACHMENT
-                | TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_SRC,
-        )
-    }
-}
-
-impl CameraMainTextureUsages {
-    pub fn with(mut self, usages: TextureUsages) -> Self {
-        self.0 |= usages;
-        self
     }
 }
 

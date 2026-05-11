@@ -2,15 +2,18 @@ pub mod visibility;
 pub mod window;
 
 use bevy_camera::{
-    primitives::Frustum, CameraMainTextureUsages, ClearColor, ClearColorConfig, CompositingSpace,
-    Exposure, MainPassResolutionOverride, NormalizedRenderTarget,
+    primitives::Frustum, ClearColor, ClearColorConfig, ColorTarget, CompositingSpace, Exposure,
+    NormalizedRenderTarget,
 };
 use bevy_diagnostic::FrameCount;
 pub use visibility::*;
 pub use window::*;
 
 use crate::{
-    camera::{ExtractedCamera, MipBias, NormalizedRenderTargetExt as _, TemporalJitter},
+    camera::{
+        ExtractedCamera, ExtractedColorTargets, MipBias, NormalizedRenderTargetExt as _,
+        TemporalJitter,
+    },
     extract_component::ExtractComponentPlugin,
     occlusion_culling::OcclusionCulling,
     render_asset::RenderAssets,
@@ -28,7 +31,7 @@ use alloc::sync::{Arc, Weak};
 use bevy_app::{App, Plugin};
 use bevy_color::{LinearRgba, Oklaba, Srgba};
 use bevy_derive::{Deref, DerefMut};
-use bevy_ecs::{prelude::*, VariantDefaults};
+use bevy_ecs::{entity::EntityHashMap, prelude::*, VariantDefaults};
 use bevy_image::ToExtents;
 use bevy_math::{mat3, vec2, vec3, Mat3, Mat4, UVec4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use bevy_platform::collections::{hash_map::Entry, HashMap};
@@ -42,8 +45,9 @@ use core::{
 };
 use wgpu::{
     BufferUsages, Color as WgpuColor, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
-    StoreOp, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
+    StoreOp, TextureDimension, TextureFormat, TextureUsages,
 };
+use wgpu_types as wgt;
 
 /// The matrix that converts from the RGB to the LMS color space.
 ///
@@ -173,7 +177,6 @@ impl Plugin for ViewPlugin {
         app
             // NOTE: windows.is_changed() handles cases where a window was resized
             .add_plugins((
-                ExtractComponentPlugin::<Msaa>::default(),
                 ExtractComponentPlugin::<OcclusionCulling>::default(),
                 RenderVisibilityRangePlugin,
             ));
@@ -210,54 +213,6 @@ impl Plugin for ViewPlugin {
             render_app
                 .init_gpu_resource::<ViewUniforms>()
                 .init_gpu_resource::<ViewTargetAttachments>();
-        }
-    }
-}
-
-/// Component for configuring the number of samples for [Multi-Sample Anti-Aliasing](https://en.wikipedia.org/wiki/Multisample_anti-aliasing)
-/// for a [`Camera`](bevy_camera::Camera).
-///
-/// Defaults to 4 samples. A higher number of samples results in smoother edges.
-///
-/// Some advanced rendering features may require that MSAA is disabled.
-///
-/// Note that the web currently only supports 1 or 4 samples.
-#[derive(
-    Component,
-    Default,
-    Clone,
-    Copy,
-    ExtractComponent,
-    Reflect,
-    PartialEq,
-    PartialOrd,
-    VariantDefaults,
-    Eq,
-    Hash,
-    Debug,
-)]
-#[reflect(Component, Default, PartialEq, Hash, Debug)]
-pub enum Msaa {
-    Off = 1,
-    Sample2 = 2,
-    #[default]
-    Sample4 = 4,
-    Sample8 = 8,
-}
-
-impl Msaa {
-    #[inline]
-    pub fn samples(&self) -> u32 {
-        *self as u32
-    }
-
-    pub fn from_samples(samples: u32) -> Self {
-        match samples {
-            1 => Msaa::Off,
-            2 => Msaa::Sample2,
-            4 => Msaa::Sample4,
-            8 => Msaa::Sample8,
-            _ => panic!("Unsupported MSAA sample count: {samples}"),
         }
     }
 }
@@ -363,10 +318,9 @@ pub struct ExtractedView {
     // `projection` and `transform` fields, which can be helpful in cases where numerical
     // stability matters and there is a more direct way to derive the view-projection matrix.
     pub clip_from_world: Option<Mat4>,
-    /// The [`TextureFormat`] this view will render to. Note that this may diverge from
-    /// the [`RenderTarget`](bevy_camera::RenderTarget)'s texture format. Among other
-    /// reasons, [`Hdr`](bevy_camera::Hdr) sets an the internal render target format
-    /// override to ensure sufficient precision is present for lighting calculations.
+    /// The intermediate texture view's [`TextureFormat`] this view will render to.
+    /// This is not [`ExtractedCamera::target`]/[`NormalizedRenderTarget`]'s format.
+    /// And this may differ from [`ColorTargetTexture::format`] depend on [`bevy_camera::CameraColorTargetTextureView::format`]
     pub target_format: TextureFormat,
     // uvec4(origin.x, origin.y, width, height)
     pub viewport: UVec4,
@@ -995,7 +949,6 @@ pub fn prepare_view_uniforms(
         Option<&Frustum>,
         Option<&TemporalJitter>,
         Option<&MipBias>,
-        Option<&MainPassResolutionOverride>,
     )>,
     frame_count: Res<FrameCount>,
 ) {
@@ -1008,22 +961,9 @@ pub fn prepare_view_uniforms(
     else {
         return;
     };
-    for (
-        entity,
-        extracted_camera,
-        extracted_view,
-        frustum,
-        temporal_jitter,
-        mip_bias,
-        resolution_override,
-    ) in &views
-    {
+    for (entity, extracted_camera, extracted_view, frustum, temporal_jitter, mip_bias) in &views {
         let viewport = extracted_view.viewport.as_vec4();
         let mut main_pass_viewport = viewport;
-        if let Some(resolution_override) = resolution_override {
-            main_pass_viewport.z = resolution_override.0.x as f32;
-            main_pass_viewport.w = resolution_override.0.y as f32;
-        }
 
         let unjittered_projection = extracted_view.clip_from_view;
         let mut clip_from_view = unjittered_projection;
@@ -1138,38 +1078,19 @@ pub fn cleanup_view_targets_for_resize(
     }
 }
 
-type MainTextureKey = (
-    Option<NormalizedRenderTarget>,
-    TextureUsages,
-    TextureFormat,
-    Msaa,
-);
-
 pub fn prepare_view_targets(
     mut commands: Commands,
     clear_color_global: Res<ClearColor>,
     render_device: Res<RenderDevice>,
     mut texture_cache: ResMut<TextureCache>,
-    cameras: Query<(
-        Entity,
-        &ExtractedCamera,
-        &ExtractedView,
-        &CameraMainTextureUsages,
-        &Msaa,
-    )>,
+    cameras: Query<(Entity, &ExtractedCamera, &ExtractedView)>,
     view_target_attachments: Res<ViewTargetAttachments>,
-    mut main_texture_atomics: Local<HashMap<MainTextureKey, Weak<AtomicUsize>>>,
+    extracted_color_targets: Res<ExtractedColorTargets>,
+    mut color_target_textures: Local<
+        EntityHashMap<(ColorAttachment, ColorAttachment, Weak<AtomicUsize>)>,
+    >,
 ) {
-    main_texture_atomics.retain(|_, weak| weak.strong_count() > 0);
-
-    let mut textures = <HashMap<_, _>>::default();
-    for (entity, camera, view, texture_usage, msaa) in cameras.iter() {
-        let Some(target_size) = camera.physical_target_size else {
-            // If we don't have a target size, we can't create the main texture and have to bail
-            commands.entity(entity).try_remove::<ViewTarget>();
-            continue;
-        };
-
+    for (entity, camera, view) in cameras.iter() {
         let out_attachment = camera
             .target
             .as_ref()
@@ -1199,37 +1120,29 @@ pub fn prepare_view_targets(
                 Some(CompositingSpace::Linear) | None => LinearRgba::from(color).into(),
             });
 
-        let key: MainTextureKey = (
-            camera.target.clone(),
-            texture_usage.0,
-            main_texture_format,
-            *msaa,
-        );
-        let (a, b, sampled, main_texture) = textures.entry(key.clone()).or_insert_with(|| {
-            let descriptor = TextureDescriptor {
-                label: None,
-                size: target_size.to_extents(),
+        let color_target = extracted_color_targets.get(&entity).unwrap();
+
+        let (a, b, main_texture) = color_target_textures.entry(entity).or_insert_with(|| {
+            let descriptor = wgt::TextureDescriptor {
+                label: color_target.label,
+                size: color_target.size.to_extents(),
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: TextureDimension::D2,
                 format: main_texture_format,
-                usage: texture_usage.0,
-                view_formats: match main_texture_format {
-                    TextureFormat::Bgra8Unorm => &[TextureFormat::Bgra8UnormSrgb],
-                    TextureFormat::Rgba8Unorm => &[TextureFormat::Rgba8UnormSrgb],
-                    _ => &[],
-                },
+                usage: color_target.usage,
+                view_formats: color_target.view_formats,
             };
             let a = texture_cache.get(
                 &render_device,
-                TextureDescriptor {
+                wgt::TextureDescriptor {
                     label: Some("main_texture_a"),
                     ..descriptor
                 },
             );
             let b = texture_cache.get(
                 &render_device,
-                TextureDescriptor {
+                wgt::TextureDescriptor {
                     label: Some("main_texture_b"),
                     ..descriptor
                 },
@@ -1237,7 +1150,7 @@ pub fn prepare_view_targets(
             let sampled = if msaa.samples() > 1 {
                 let sampled = texture_cache.get(
                     &render_device,
-                    TextureDescriptor {
+                    wgt::TextureDescriptor {
                         label: Some("main_texture_sampled"),
                         size: target_size.to_extents(),
                         mip_level_count: 1,
@@ -1265,7 +1178,7 @@ pub fn prepare_view_targets(
                     arc
                 }
             };
-            (a, b, sampled, main_texture)
+            (a, b, main_texture)
         });
 
         let main_textures = MainTargetTextures {

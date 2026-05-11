@@ -1,4 +1,6 @@
 #![expect(missing_docs, reason = "Not all docs are written yet, see #3492.")]
+extern crate alloc;
+
 mod camera;
 mod clear_color;
 mod components;

@@ -2,7 +2,7 @@ use core::mem;
 
 use crate::{
     batching::gpu_preprocessing::{GpuPreprocessingMode, GpuPreprocessingSupport},
-    extract_component::{ExtractComponent, ExtractComponentPlugin},
+    extract_component::ExtractComponent,
     extract_resource::{extract_resource, ExtractResource, ExtractResourcePlugin},
     render_asset::RenderAssets,
     render_resource::TextureView,
@@ -10,7 +10,7 @@ use crate::{
     sync_world::{MainEntity, MainEntityHashSet, RenderEntity, SyncToRenderWorld},
     texture::{GpuImage, ManualTextureViews},
     view::{
-        ColorGrading, ExtractedView, ExtractedWindows, Msaa, NoIndirectDrawing,
+        ColorGrading, ExtractedView, ExtractedWindows, NoIndirectDrawing,
         RenderExtractedVisibleEntities, RenderVisibleEntities, RenderVisibleEntitiesClass,
         RetainedViewEntity, ViewUniformOffset, VisibilityExtractionSystemParam,
     },
@@ -22,9 +22,10 @@ use bevy_asset::{AssetEvent, AssetEventSystems, AssetId, Assets};
 use bevy_camera::{
     primitives::Frustum,
     visibility::{self, RenderLayers, VisibleEntities},
-    Camera, Camera2d, Camera3d, CameraMainTextureUsages, CameraOutputMode, CameraUpdateSystems,
-    ClearColor, ClearColorConfig, CompositingSpace, Exposure, Hdr, ManualTextureViewHandle,
-    MsaaWriteback, NormalizedRenderTarget, Projection, RenderTarget, RenderTargetInfo, Viewport,
+    Camera, Camera2d, Camera3d, CameraColorTarget, CameraColorTargetTextureView, CameraOutputMode,
+    CameraUpdateSystems, ClearColor, ClearColorConfig, ColorTarget, CompositingSpace, Exposure,
+    ManualTextureViewHandle, MsaaWriteback, NormalizedRenderTarget, Projection, RenderTarget,
+    RenderTargetInfo, TonemapMode, Viewport,
 };
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::{
@@ -53,23 +54,15 @@ use bevy_window::{PrimaryWindow, Window, WindowCreated, WindowResized, WindowSca
 use itertools::Either;
 use wgpu::TextureFormat;
 
-/// Main-pass color [`TextureFormat`] keyed by camera render entity.
-#[derive(Resource, Default, Deref, DerefMut)]
-pub struct CameraMainPassTextureFormats(pub EntityHashMap<TextureFormat>);
-
 #[derive(Default)]
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.register_required_components::<Camera, Msaa>()
-            .register_required_components::<Camera, SyncToRenderWorld>()
+        app.register_required_components::<Camera, SyncToRenderWorld>()
             .register_required_components::<Camera3d, ColorGrading>()
             .register_required_components::<Camera3d, Exposure>()
-            .add_plugins((
-                ExtractResourcePlugin::<ClearColor>::default(),
-                ExtractComponentPlugin::<CameraMainTextureUsages>::default(),
-            ))
+            .add_plugins(ExtractResourcePlugin::<ClearColor>::default())
             .add_systems(PostStartup, camera_system.in_set(CameraUpdateSystems))
             .add_systems(
                 PostUpdate,
@@ -84,8 +77,8 @@ impl Plugin for CameraPlugin {
 
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app
-                .init_resource::<CameraMainPassTextureFormats>()
                 .init_resource::<SortedCameras>()
+                .init_resource::<ExtractedColorTargets>()
                 .init_resource::<DirtySpecializations>()
                 .init_resource::<DirtyWireframeSpecializations>()
                 .allow_ambiguous_resource::<DirtySpecializations>()
@@ -127,20 +120,6 @@ impl ExtractResource for ClearColor {
 
     fn extract_resource(source: &Self::Source) -> Self {
         source.clone()
-    }
-}
-
-impl SyncComponent for CameraMainTextureUsages {
-    type Target = Self;
-}
-
-impl ExtractComponent for CameraMainTextureUsages {
-    type QueryData = &'static Self;
-    type QueryFilter = ();
-    type Out = Self;
-
-    fn extract_component(item: QueryItem<Self::QueryData>) -> Option<Self::Out> {
-        Some(*item)
     }
 }
 
@@ -464,15 +443,17 @@ pub struct ExtractedCamera {
     pub clear_color: ClearColorConfig,
     pub sorted_camera_index_for_target: usize,
     pub exposure: f32,
-    pub hdr: bool,
+    pub tonemap_mode: TonemapMode,
     /// When [`CompositingSpace::Srgb`], the main texture uses linear storage (`Rgba8Unorm`)
     /// and shaders output sRGB-encoded values for gamma-encoded blending.
     pub compositing_space: Option<CompositingSpace>,
 }
 
+#[derive(Resource, Deref, DerefMut, Default)]
+pub struct ExtractedColorTargets(EntityHashMap<ColorTarget>);
+
 pub fn extract_cameras(
     mut commands: Commands,
-    mut main_pass_formats: ResMut<CameraMainPassTextureFormats>,
     query: Extract<
         Query<(
             Entity,
@@ -484,7 +465,7 @@ pub fn extract_cameras(
             &VisibleEntities,
             &Frustum,
             (
-                Has<Hdr>,
+                &TonemapMode,
                 Option<&CompositingSpace>,
                 Option<&ColorGrading>,
                 Option<&Exposure>,
@@ -494,12 +475,12 @@ pub fn extract_cameras(
                 Option<&Projection>,
                 Has<NoIndirectDrawing>,
             ),
+            (&CameraColorTarget, &CameraColorTargetTextureView),
         )>,
     >,
+    color_targets: Extract<Query<(RenderEntity, &ColorTarget)>>,
+    mut extracted_color_targets: ResMut<ExtractedColorTargets>,
     primary_window: Extract<Query<Entity, With<PrimaryWindow>>>,
-    extracted_windows: Res<ExtractedWindows>,
-    manual_texture_views: Res<ManualTextureViews>,
-    images: Res<RenderAssets<GpuImage>>,
     mut existing_render_visible_entities_cpu_culling: Query<
         &mut RenderExtractedVisibleEntities,
         With<RenderVisibleEntities>,
@@ -507,7 +488,6 @@ pub fn extract_cameras(
     gpu_preprocessing_support: Res<GpuPreprocessingSupport>,
     visibility_extraction_system_param: VisibilityExtractionSystemParam,
 ) {
-    main_pass_formats.clear();
     let primary_window = primary_window.iter().next();
     type ExtractedCameraComponents = (
         ExtractedCamera,
@@ -530,7 +510,7 @@ pub fn extract_cameras(
         visible_entities,
         frustum,
         (
-            hdr,
+            tonemap_mode,
             compositing_space,
             color_grading,
             exposure,
@@ -540,8 +520,11 @@ pub fn extract_cameras(
             projection,
             no_indirect_drawing,
         ),
+        (camera_color_target, camera_color_target_texture_view),
     ) in query.iter()
     {
+        extracted_color_targets.clear();
+
         if !camera.is_active {
             commands
                 .entity(render_entity)
@@ -602,22 +585,17 @@ pub fn extract_cameras(
             // removed from it.
 
             let target = render_target.normalize(primary_window);
-            let output_texture_format = target
-                .as_ref()
-                .and_then(|target| {
-                    target
-                        .get_texture_view_format(&extracted_windows, &images, &manual_texture_views)
-                        .map(|format| normalize_bgra8(target, format))
-                })
-                .unwrap_or(TextureFormat::Rgba8UnormSrgb);
-            let target_format = if hdr {
-                TextureFormat::Rgba16Float
-            } else if compositing_space.is_some_and(|s| *s == CompositingSpace::Srgb) {
-                TextureFormat::Rgba8Unorm
-            } else {
-                output_texture_format
+
+            let (color_target_render_entity, color_target) = match camera_color_target {
+                CameraColorTarget::Owned(color_target) => (render_entity, color_target),
+                CameraColorTarget::Reference(entity) => color_targets
+                    .get(*entity)
+                    .expect("`CameraColorTarget::Reference` references to an invalid entity"),
             };
-            main_pass_formats.insert(render_entity, target_format);
+            let target_format = camera_color_target_texture_view
+                .format
+                .unwrap_or(color_target.format);
+            extracted_color_targets.insert(color_target_render_entity, color_target.clone());
 
             let mut commands = commands.entity(render_entity);
             commands.insert((
@@ -636,7 +614,7 @@ pub fn extract_cameras(
                     exposure: exposure
                         .map(Exposure::exposure)
                         .unwrap_or_else(|| Exposure::default().exposure()),
-                    hdr,
+                    tonemap_mode: *tonemap_mode,
                     compositing_space: compositing_space.copied(),
                 },
                 ExtractedView {
@@ -644,13 +622,13 @@ pub fn extract_cameras(
                     clip_from_view: camera.clip_from_view(),
                     world_from_view: *transform,
                     clip_from_world: None,
-                    target_format,
                     viewport: UVec4::new(
                         viewport_origin.x,
                         viewport_origin.y,
                         viewport_size.x,
                         viewport_size.y,
                     ),
+                    target_format,
                     color_grading,
                     invert_culling: camera.invert_culling,
                 },
@@ -718,7 +696,6 @@ pub struct SortedCamera {
     pub entity: Entity,
     pub order: isize,
     pub target: Option<NormalizedRenderTarget>,
-    pub hdr: bool,
     pub output_mode: CameraOutputMode,
 }
 
@@ -732,7 +709,6 @@ pub fn sort_cameras(
             entity,
             order: camera.order,
             target: camera.target.clone(),
-            hdr: camera.hdr,
             output_mode: camera.output_mode,
         });
     }
@@ -751,9 +727,7 @@ pub fn sort_cameras(
             ambiguities.insert(new_order_target.clone());
         }
         if let Some(target) = &sorted_camera.target {
-            let count = target_counts
-                .entry((target.clone(), sorted_camera.hdr))
-                .or_insert(0usize);
+            let count = target_counts.entry(target.clone()).or_insert(0usize);
             let (_, mut camera) = cameras.get_mut(sorted_camera.entity).unwrap();
             camera.sorted_camera_index_for_target = *count;
             *count += 1;

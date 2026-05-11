@@ -4,7 +4,8 @@ use crate::{
 };
 use bevy_ecs::{prelude::ResMut, resource::Resource};
 use bevy_platform::collections::{hash_map::Entry, HashMap};
-use wgpu::{TextureDescriptor, TextureViewDescriptor};
+use smallvec::SmallVec;
+use wgpu_types::{TextureDescriptor, TextureFormat, TextureViewDescriptor};
 
 /// The internal representation of a [`CachedTexture`] used to track whether it was recently used
 /// and is currently taken.
@@ -29,7 +30,10 @@ pub struct CachedTexture {
 /// are only required for one frame.
 #[derive(Resource, Default)]
 pub struct TextureCache {
-    textures: HashMap<TextureDescriptor<'static>, Vec<CachedTextureMeta>>,
+    textures: HashMap<
+        TextureDescriptor<Option<alloc::borrow::Cow<'static, str>>, SmallVec<[TextureFormat; 1]>>,
+        Vec<CachedTextureMeta>,
+    >,
 }
 
 impl TextureCache {
@@ -38,7 +42,10 @@ impl TextureCache {
     pub fn get(
         &mut self,
         render_device: &RenderDevice,
-        descriptor: TextureDescriptor<'static>,
+        descriptor: TextureDescriptor<
+            Option<alloc::borrow::Cow<'static, str>>,
+            SmallVec<[TextureFormat; 1]>,
+        >,
     ) -> CachedTexture {
         match self.textures.entry(descriptor) {
             Entry::Occupied(mut entry) => {
