@@ -1,5 +1,10 @@
-use bevy::{dev_tools::world_asset_helpers::merge_all_mesh_3d, prelude::*};
+use bevy::{
+    dev_tools::world_asset_helpers::merge_all_mesh_3d, gltf::GltfLoaderSettings,
+    mesh::MeshAttributeCompressionFlags, prelude::*,
+};
 use rand::RngExt;
+
+use crate::Args;
 
 const BASE_URL: &str = "https://github.com/bevyengine/bevy_asset_files/raw/main/kenney";
 
@@ -61,14 +66,33 @@ pub fn load_assets(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    args: Res<Args>,
 ) {
     let base_url = BASE_URL;
-
+    let vertex_compression = args.vertex_compression;
     let mut untyped_assets = vec![];
     /// Wraps asset_server.load_asset to automatically track all the assets that are being loaded
     macro_rules! load_asset {
         ($path:expr) => {{
             let handle = asset_server.load($path);
+            untyped_assets.push(handle.clone().untyped());
+            handle
+        }};
+    }
+    macro_rules! load_gltf_asset_with_settings {
+        ($path:expr) => {{
+            let handle = asset_server
+                .load_builder()
+                .with_settings(move |settings: &mut GltfLoaderSettings| {
+                    if vertex_compression {
+                        settings.mesh_attribute_compression = Some(
+                            MeshAttributeCompressionFlags::all()
+                                .with_color(MeshAttributeCompressionFlags::COMPRESS_COLOR_FLOAT16),
+                        );
+                        settings.mesh_index_compression = Some(true);
+                    }
+                })
+                .load($path);
             untyped_assets.push(handle.clone().untyped());
             handle
         }};
@@ -102,15 +126,16 @@ pub fn load_assets(
         ]
         .iter()
         .map(|t| {
+            // Compressed meshes can't be merged. We will apply vertex compression in `merge_car_meshes`.
             load_asset!(GltfAssetLabel::Scene(0).from_asset(format!("{base_url}/car-kit/{t}.glb")))
         })
         .collect::<Vec<_>>()
     };
 
-    let crossroad = load_asset!(GltfAssetLabel::Scene(0)
+    let crossroad = load_gltf_asset_with_settings!(GltfAssetLabel::Scene(0)
         .from_asset(format!("{base_url}/city-kit-roads/road-crossroad-path.glb")));
     let road_straight =
-        load_asset!(GltfAssetLabel::Scene(0)
+        load_gltf_asset_with_settings!(GltfAssetLabel::Scene(0)
             .from_asset(format!("{base_url}/city-kit-roads/road-straight.glb")));
 
     let high_density = {
@@ -129,7 +154,7 @@ pub fn load_assets(
         let mut meshes = ["a", "b", "c", "d", "e"]
             .iter()
             .map(|t| {
-                load_asset!(GltfAssetLabel::Primitive {
+                load_gltf_asset_with_settings!(GltfAssetLabel::Primitive {
                     mesh: 0,
                     primitive: 0,
                 }
@@ -139,7 +164,7 @@ pub fn load_assets(
             })
             .collect::<Vec<_>>();
         meshes.extend(["m", "l"].iter().map(|t| {
-            load_asset!(GltfAssetLabel::Primitive {
+            load_gltf_asset_with_settings!(GltfAssetLabel::Primitive {
                 mesh: 0,
                 primitive: 0,
             }
@@ -164,7 +189,7 @@ pub fn load_assets(
         let meshes = ["a", "b", "c", "d", "f", "g", "h"]
             .iter()
             .map(|t| {
-                load_asset!(GltfAssetLabel::Primitive {
+                load_gltf_asset_with_settings!(GltfAssetLabel::Primitive {
                     mesh: 0,
                     primitive: 0,
                 }
@@ -189,7 +214,7 @@ pub fn load_assets(
         let meshes = ["b", "c", "d", "e", "f", "g", "h", "i", "k", "l", "o", "u"]
             .iter()
             .map(|t| {
-                load_asset!(GltfAssetLabel::Primitive {
+                load_gltf_asset_with_settings!(GltfAssetLabel::Primitive {
                     mesh: 0,
                     primitive: 0,
                 }
@@ -203,7 +228,7 @@ pub fn load_assets(
     };
 
     let ground_tile = {
-        let mesh = load_asset!(GltfAssetLabel::Primitive {
+        let mesh = load_gltf_asset_with_settings!(GltfAssetLabel::Primitive {
             mesh: 0,
             primitive: 0,
         }
@@ -219,16 +244,17 @@ pub fn load_assets(
     };
 
     let tree_small: Handle<WorldAsset> =
-        load_asset!(GltfAssetLabel::Scene(0)
+        load_gltf_asset_with_settings!(GltfAssetLabel::Scene(0)
             .from_asset(format!("{base_url}/city-kit-suburban/tree-small.glb")));
     let tree_large: Handle<WorldAsset> =
-        load_asset!(GltfAssetLabel::Scene(0)
+        load_gltf_asset_with_settings!(GltfAssetLabel::Scene(0)
             .from_asset(format!("{base_url}/city-kit-suburban/tree-large.glb")));
 
-    let path_stones_long: Handle<WorldAsset> = load_asset!(GltfAssetLabel::Scene(0)
-        .from_asset(format!("{base_url}/city-kit-suburban/path-stones-long.glb")));
+    let path_stones_long: Handle<WorldAsset> =
+        load_gltf_asset_with_settings!(GltfAssetLabel::Scene(0)
+            .from_asset(format!("{base_url}/city-kit-suburban/path-stones-long.glb")));
 
-    let fence: Handle<WorldAsset> = load_asset!(
+    let fence: Handle<WorldAsset> = load_gltf_asset_with_settings!(
         GltfAssetLabel::Scene(0).from_asset(format!("{base_url}/city-kit-suburban/fence.glb"))
     );
 
@@ -261,10 +287,20 @@ pub fn merge_car_meshes(
     city_assets: &mut CityAssets,
     world_assets: &mut Assets<WorldAsset>,
     meshes: &mut Assets<Mesh>,
+    vertex_compression: bool,
 ) {
     for car_scene in &city_assets.cars {
         let Some(merged) = merge_all_mesh_3d(world_assets, meshes, car_scene) else {
             continue;
+        };
+        let merged = if vertex_compression {
+            merged.compressed_mesh(
+                MeshAttributeCompressionFlags::all()
+                    .with_color(MeshAttributeCompressionFlags::COMPRESS_COLOR_FLOAT16),
+                true,
+            )
+        } else {
+            merged
         };
         city_assets.car_meshes.push(meshes.add(merged));
     }

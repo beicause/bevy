@@ -1,6 +1,7 @@
 use bevy::{
     camera::visibility::NoCpuCulling,
     camera_controller::free_camera::FreeCameraState,
+    dev_tools::fps_overlay::FpsOverlayConfig,
     feathers::{
         self,
         controls::{FeathersButton, FeathersCheckbox},
@@ -23,6 +24,7 @@ pub struct Settings {
     pub contact_shadows_enabled: bool,
     pub wireframe_enabled: bool,
     pub cpu_culling: bool,
+    pub fps_overlay: bool,
 }
 
 impl Default for Settings {
@@ -33,6 +35,7 @@ impl Default for Settings {
             contact_shadows_enabled: true,
             wireframe_enabled: false,
             cpu_culling: true,
+            fps_overlay: true,
         }
     }
 }
@@ -142,6 +145,22 @@ pub fn settings_ui() -> impl Scene {
                                     commands.entity(entity).insert(NoCpuCulling);
                                 }
                             }
+                        }
+                    )
+                ),
+                (
+                    @FeathersCheckbox {
+                        @caption: {bsn! { Text("FPS overlay") ThemedText }}
+                    }
+                    Checked
+                    on(checkbox_self_update)
+                    on(
+                        |change: On<ValueChange<bool>>,
+                         mut settings: ResMut<Settings>,
+                         mut fps_overlay_config:ResMut<FpsOverlayConfig>| {
+                            settings.fps_overlay = change.value;
+                            fps_overlay_config.enabled = settings.fps_overlay;
+                            fps_overlay_config.frame_time_graph_config.enabled = settings.fps_overlay;
                         }
                     )
                 ),

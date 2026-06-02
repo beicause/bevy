@@ -13,6 +13,7 @@ use bevy::{
     camera::{visibility::NoCpuCulling, Exposure, Hdr},
     camera_controller::free_camera::{FreeCamera, FreeCameraPlugin},
     color::palettes::css::WHITE,
+    dev_tools::fps_overlay::FpsOverlayPlugin,
     feathers::{dark_theme::create_dark_theme, theme::UiTheme, FeathersPlugins},
     light::{
         atmosphere::{Falloff, PhaseFunction, ScatteringMedium, ScatteringTerm},
@@ -53,6 +54,10 @@ pub struct Args {
     /// adds NoCpuCulling to all meshes
     #[argh(switch)]
     no_cpu_culling: bool,
+
+    /// compresses vertex attributes when loading mesh
+    #[argh(switch)]
+    vertex_compression: bool,
 }
 
 fn main() {
@@ -73,6 +78,7 @@ fn main() {
             FreeCameraPlugin,
             FeathersPlugins,
             WireframePlugin::default(),
+            FpsOverlayPlugin::default(),
         ))
         .insert_resource(args.clone())
         .insert_resource(ClearColor(Color::BLACK))
@@ -297,8 +303,14 @@ fn process_assets(
     mut city_assets: ResMut<CityAssets>,
     mut world_assets: ResMut<Assets<WorldAsset>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    args: Res<Args>,
 ) {
-    merge_car_meshes(&mut city_assets, &mut world_assets, &mut meshes);
+    merge_car_meshes(
+        &mut city_assets,
+        &mut world_assets,
+        &mut meshes,
+        args.vertex_compression,
+    );
 
     // Use a Message instead of an Event so spawning the city happens in the next frame
     commands.write_message(CityAssetsReady);
