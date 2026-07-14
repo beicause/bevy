@@ -101,25 +101,25 @@ impl FromWorld for DiagnosticsRecorder {
 }
 
 /// Starts the diagnostics recorder for the frame.
-pub fn begin_diagnostics_frame(mut recorder: ResMut<DiagnosticsRecorder>) {
+pub fn begin_diagnostics_frame(recorder: Res<DiagnosticsRecorder>) {
     recorder.begin_frame();
 }
 
 /// Resolves the encoder used for diagnostic recording
 pub fn resolve_encoder(
-    mut recorder: ResMut<DiagnosticsRecorder>,
+    recorder: Res<DiagnosticsRecorder>,
     render_device: Res<RenderDevice>,
     mut pending_buffers: ResMut<PendingCommandBuffers>,
 ) {
     let mut encoder =
         render_device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
     recorder.resolve(&mut encoder);
-    pending_buffers.push_encoder(encoder);
+    pending_buffers.push_buffers([encoder.finish()]);
 }
 
 /// Ends the current frame for the diagnostics recorder and syncs it with the main world.
 fn finish_diagnostics_frame(
-    mut recorder: ResMut<DiagnosticsRecorder>,
+    recorder: Res<DiagnosticsRecorder>,
     render_device: Res<RenderDevice>,
     mutex: Res<RenderDiagnosticsMutex>,
 ) {

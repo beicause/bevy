@@ -189,7 +189,7 @@ fn update_sparse_buffers(
     sparse_buffer_update_jobs: Res<SparseBufferUpdateJobs>,
     sparse_buffer_update_bind_groups: Res<SparseBufferUpdateBindGroups>,
     pipeline_cache: Res<PipelineCache>,
-    mut diagnostics: Option<ResMut<DiagnosticsRecorder>>,
+    diagnostics: Option<Res<DiagnosticsRecorder>>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
 ) {
@@ -206,7 +206,7 @@ fn update_sparse_buffers(
         });
 
     let time_span = diagnostics
-        .as_mut()
+        .as_ref()
         .map(|diagnostics| diagnostics.time_span(&mut command_encoder, "sparse buffer update"));
 
     command_encoder.push_debug_group("sparse buffer update");

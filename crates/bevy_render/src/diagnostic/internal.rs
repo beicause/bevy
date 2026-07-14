@@ -5,6 +5,7 @@ use core::{
 };
 use std::thread::{self, ThreadId};
 
+use crate::renderer::{RenderAdapterInfo, RenderDevice, RenderQueue, WgpuWrapper};
 use bevy_diagnostic::{Diagnostic, DiagnosticMeasurement, DiagnosticPath, DiagnosticsStore};
 use bevy_ecs::resource::Resource;
 use bevy_ecs::system::{Res, ResMut};
@@ -15,8 +16,6 @@ use wgpu::{
     Device, Features, MapMode, PipelineStatisticsTypes, QuerySet, QuerySetDescriptor, QueryType,
     RenderPass,
 };
-
-use crate::renderer::{RenderAdapterInfo, RenderDevice, RenderQueue, WgpuWrapper};
 
 use super::RecordDiagnostics;
 
@@ -31,16 +30,16 @@ struct DiagnosticsRecorderInternal {
     timestamp_period_ns: f32,
     features: Features,
     current_frame: Mutex<FrameData>,
-    submitted_frames: Vec<FrameData>,
-    finished_frames: Vec<FrameData>,
+    submitted_frames: Mutex<Vec<FrameData>>,
+    finished_frames: Mutex<Vec<FrameData>>,
     #[cfg(feature = "tracing-tracy")]
     tracy_gpu_context: Option<tracy_client::GpuContext>,
 }
 
 /// Records diagnostics into [`QuerySet`]'s keeping track of the mapping between
 /// spans and indices to the corresponding entries in the [`QuerySet`].
-#[derive(Resource)]
-pub struct DiagnosticsRecorder(WgpuWrapper<DiagnosticsRecorderInternal>);
+#[derive(Resource, Clone)]
+pub struct DiagnosticsRecorder(Arc<WgpuWrapper<DiagnosticsRecorderInternal>>);
 
 impl DiagnosticsRecorder {
     /// Creates the new `DiagnosticsRecorder`.
@@ -56,7 +55,7 @@ impl DiagnosticsRecorder {
             super::tracy_gpu::new_tracy_gpu_context(adapter_info, device, queue);
         let _ = adapter_info; // Prevent unused variable warnings when tracing-tracy is not enabled
 
-        DiagnosticsRecorder(WgpuWrapper::new(DiagnosticsRecorderInternal {
+        DiagnosticsRecorder(Arc::new(WgpuWrapper::new(DiagnosticsRecorderInternal {
             timestamp_period_ns: queue.get_timestamp_period(),
             features,
             current_frame: Mutex::new(FrameData::new(
@@ -65,15 +64,11 @@ impl DiagnosticsRecorder {
                 #[cfg(feature = "tracing-tracy")]
                 tracy_gpu_context.clone(),
             )),
-            submitted_frames: Vec::new(),
-            finished_frames: Vec::new(),
+            submitted_frames: Default::default(),
+            finished_frames: Default::default(),
             #[cfg(feature = "tracing-tracy")]
             tracy_gpu_context,
-        }))
-    }
-
-    fn current_frame_mut(&mut self) -> &mut FrameData {
-        self.0.current_frame.get_mut().expect("lock poisoned")
+        })))
     }
 
     fn current_frame_lock(&self) -> impl DerefMut<Target = FrameData> + '_ {
@@ -81,27 +76,32 @@ impl DiagnosticsRecorder {
     }
 
     /// Begins recording diagnostics for a new frame.
-    pub fn begin_frame(&mut self) {
-        let internal = &mut self.0;
+    pub fn begin_frame(&self) {
+        let internal = &self.0;
         let mut idx = 0;
-        while idx < internal.submitted_frames.len() {
+        let mut submitted_frames = internal.submitted_frames.lock().expect("lock poisoned");
+        while idx < submitted_frames.len() {
             let timestamp = internal.timestamp_period_ns;
-            if internal.submitted_frames[idx].run_mapped_callback(timestamp) {
-                let removed = internal.submitted_frames.swap_remove(idx);
-                internal.finished_frames.push(removed);
+            if submitted_frames[idx].run_mapped_callback(timestamp) {
+                let removed = submitted_frames.swap_remove(idx);
+                internal
+                    .finished_frames
+                    .lock()
+                    .expect("lock poisoned")
+                    .push(removed);
             } else {
                 idx += 1;
             }
         }
 
-        self.current_frame_mut().begin();
+        self.current_frame_lock().begin();
     }
 
     /// Copies data from [`QuerySet`]'s to a [`Buffer`], after which it can be downloaded to CPU.
     ///
     /// Should be called before [`DiagnosticsRecorder::finish_frame`].
-    pub fn resolve(&mut self, encoder: &mut CommandEncoder) {
-        self.current_frame_mut().resolve(encoder);
+    pub fn resolve(&self, encoder: &mut CommandEncoder) {
+        self.current_frame_lock().resolve(encoder);
     }
 
     /// Finishes recording diagnostics for the current frame.
@@ -111,22 +111,27 @@ impl DiagnosticsRecorder {
     /// Should be called after [`DiagnosticsRecorder::resolve`],
     /// and **after** all commands buffers have been queued.
     pub fn finish_frame(
-        &mut self,
+        &self,
         device: &RenderDevice,
         callback: impl FnOnce(RenderDiagnostics) + Send + Sync + 'static,
     ) {
         #[cfg(feature = "tracing-tracy")]
         let tracy_gpu_context = self.0.tracy_gpu_context.clone();
 
-        let internal = &mut self.0;
+        let internal = &self.0;
         internal
             .current_frame
-            .get_mut()
+            .lock()
             .expect("lock poisoned")
             .finish(callback);
 
         // reuse one of the finished frames, if we can
-        let new_frame = match internal.finished_frames.pop() {
+        let new_frame = match internal
+            .finished_frames
+            .lock()
+            .expect("lock poisoned")
+            .pop()
+        {
             Some(frame) => frame,
             None => FrameData::new(
                 device,
@@ -137,10 +142,14 @@ impl DiagnosticsRecorder {
         };
 
         let old_frame = core::mem::replace(
-            internal.current_frame.get_mut().expect("lock poisoned"),
+            &mut *internal.current_frame.lock().expect("lock poisoned"),
             new_frame,
         );
-        internal.submitted_frames.push(old_frame);
+        internal
+            .submitted_frames
+            .lock()
+            .expect("lock poisoned")
+            .push(old_frame);
     }
 }
 
