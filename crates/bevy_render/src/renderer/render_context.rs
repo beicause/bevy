@@ -246,7 +246,7 @@ impl<'w, 's> RenderContext<'w, 's> {
     /// Begins a tracked render pass with the given descriptor.
     pub fn begin_tracked_render_pass<'a>(
         &'a mut self,
-        descriptor: &RenderPassDescriptor<'_>,
+        descriptor: RenderPassDescriptor<'_>,
     ) -> TrackedRenderPass<'a> {
         self.ensure_device();
 
@@ -257,7 +257,7 @@ impl<'w, 's> RenderContext<'w, 's> {
                 })
         });
 
-        let render_pass = command_encoder.begin_render_pass(descriptor);
+        let render_pass = command_encoder.begin_render_pass(&descriptor);
         TrackedRenderPass::new(&self.render_device, render_pass)
     }
 
@@ -303,9 +303,9 @@ impl CommandBufferTaskContext {
     pub fn begin_tracked_render_pass<'a>(
         &'a mut self,
         command_encoder: &'a mut CommandEncoder,
-        descriptor: &RenderPassDescriptor<'_>,
+        descriptor: RenderPassDescriptor<'_>,
     ) -> TrackedRenderPass<'a> {
-        let render_pass = command_encoder.begin_render_pass(descriptor);
+        let render_pass = command_encoder.begin_render_pass(&descriptor);
         TrackedRenderPass::new(&self.render_device, render_pass)
     }
 }

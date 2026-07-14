@@ -23,11 +23,14 @@ use bevy_log::info_span;
 use bevy_reflect::Reflect;
 use bevy_render::{
     camera::{ExtractedCamera, SortedCameras},
+    diagnostic::DiagnosticsRecorder,
     render_resource::{
         CommandEncoderDescriptor, LoadOp, Operations, RenderPassColorAttachment,
         RenderPassDescriptor, StoreOp,
     },
-    renderer::{CurrentView, PendingCommandBuffers, RenderDevice, RenderQueue},
+    renderer::{
+        CommandBufferTaskContext, CurrentView, PendingCommandBuffers, RenderDevice, RenderQueue,
+    },
     view::ExtractedWindows,
 };
 
@@ -228,12 +231,22 @@ impl Display for RootView {
 
 pub(crate) fn submit_pending_command_buffers(
     world: &mut World,
-    state: &mut SystemState<(ResMut<PendingCommandBuffers>, Res<RenderQueue>)>,
+    state: &mut SystemState<(
+        ResMut<PendingCommandBuffers>,
+        Res<RenderQueue>,
+        Res<RenderDevice>,
+        Option<Res<DiagnosticsRecorder>>,
+    )>,
 ) {
-    let (mut pending, queue) = state.get_mut(world).unwrap();
+    let (mut pending, queue, render_device, diagnostics_recorder) = state.get_mut(world).unwrap();
     #[cfg(feature = "trace")]
     let buffer_count = pending.len();
-    let mut buffers = pending.take().peekable();
+    let mut buffers = pending
+        .finish(CommandBufferTaskContext::new(
+            render_device.clone(),
+            diagnostics_recorder.as_deref().cloned(),
+        ))
+        .peekable();
 
     if buffers.peek().is_some() {
         #[cfg(feature = "trace")]
