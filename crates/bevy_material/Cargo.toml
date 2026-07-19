@@ -26,6 +26,7 @@ thiserror = { version = "2", default-features = false }
 wgpu-types = { version = "30", default-features = false }
 variadics_please = "2.0"
 smallvec = { version = "1", default-features = false }
+bytemuck = { version = "1", default-features = false }
 
 [lints]
 workspace = true

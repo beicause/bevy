@@ -19,6 +19,7 @@ use bevy_render::{
     Render, RenderApp, RenderStartup, RenderSystems,
 };
 use bevy_shader::load_shader_library;
+use bytemuck::NoUninit;
 use resolve::OitResolvePlugin;
 
 use crate::{
@@ -141,7 +142,8 @@ fn check_msaa(cameras: Query<&Msaa, With<OrderIndependentTransparencySettings>>)
     }
 }
 
-#[derive(Clone, Copy, ShaderType)]
+#[derive(Clone, Copy, NoUninit)]
+#[repr(C)]
 pub struct OitFragmentNode {
     pub color: u32,
     pub depth_alpha: u32,

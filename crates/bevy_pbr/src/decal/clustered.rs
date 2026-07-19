@@ -39,7 +39,7 @@ use bevy_render::{
     render_asset::RenderAssets,
     render_resource::{
         binding_types, BindGroupLayoutEntryBuilder, Buffer, BufferUsages, RawBufferVec, Sampler,
-        SamplerBindingType, ShaderType, TextureSampleType, TextureView,
+        SamplerBindingType, TextureSampleType, TextureView,
     },
     renderer::{RenderAdapter, RenderDevice, RenderQueue},
     settings::WgpuFeatures,
@@ -204,7 +204,7 @@ fn extract_clustered_decal(
 }
 
 /// The GPU data structure that stores information about each decal.
-#[derive(Clone, Copy, Default, ShaderType, Pod, Zeroable)]
+#[derive(Clone, Copy, Default, Pod, Zeroable)]
 #[repr(C)]
 pub struct RenderClusteredDecal {
     /// The inverse of the model matrix.
@@ -438,7 +438,7 @@ pub(crate) fn get_bind_group_layout_entries(
 
     Some([
         // `decals`
-        binding_types::storage_buffer_read_only::<RenderClusteredDecal>(false),
+        binding_types::storage_buffer_read_only_raw::<RenderClusteredDecal>(false),
         // `decal_textures`
         binding_types::texture_2d(TextureSampleType::Float { filterable: true })
             .count(NonZero::<u32>::new(max_view_decals(render_device)).unwrap()),

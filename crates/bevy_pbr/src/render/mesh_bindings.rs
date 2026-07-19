@@ -34,8 +34,8 @@ mod layout_entry {
         mesh::MeshMetadata,
         render_resource::{
             binding_types::{
-                sampler, storage_buffer_read_only, storage_buffer_read_only_sized, texture_2d,
-                texture_3d, uniform_buffer_sized,
+                sampler, storage_buffer_read_only, storage_buffer_read_only_raw,
+                storage_buffer_read_only_sized, texture_2d, texture_3d, uniform_buffer_sized,
             },
             BindGroupLayoutEntryBuilder, BufferSize, GpuArrayBuffer, SamplerBindingType,
             ShaderStages, TextureSampleType,
@@ -75,11 +75,11 @@ mod layout_entry {
         if skin::skins_use_uniform_buffers(limits) {
             texture_3d(TextureSampleType::Float { filterable: false })
         } else {
-            storage_buffer_read_only::<MorphAttributes>(false)
+            storage_buffer_read_only_raw::<MorphAttributes>(false)
         }
     }
     pub(super) fn morph_descriptors() -> BindGroupLayoutEntryBuilder {
-        storage_buffer_read_only::<GpuMorphDescriptor>(false)
+        storage_buffer_read_only_raw::<GpuMorphDescriptor>(false)
     }
     pub(super) fn lightmaps_texture_view() -> BindGroupLayoutEntryBuilder {
         texture_2d(TextureSampleType::Float { filterable: true }).visibility(ShaderStages::FRAGMENT)

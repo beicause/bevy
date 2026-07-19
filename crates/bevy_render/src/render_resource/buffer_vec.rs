@@ -12,8 +12,6 @@ use encase::{
 use thiserror::Error;
 use wgpu::{BindingResource, BufferAddress, BufferUsages};
 
-use super::GpuArrayBufferable;
-
 /// A structure for storing raw bytes that have already been properly formatted
 /// for use by the GPU.
 ///
@@ -678,17 +676,16 @@ where
     }
 }
 
-/// Like a [`BufferVec`], but only reserves space on the GPU for elements
+/// Like a [`RawBufferVec`], but only reserves space on the GPU for elements
 /// instead of initializing them CPU-side.
 ///
 /// This type is useful when you're accumulating "output slots" for a GPU
 /// compute shader to write into.
 ///
-/// The type `T` need not be [`NoUninit`], unlike [`RawBufferVec`]; it only has to
-/// be [`GpuArrayBufferable`].
+/// The size of type `T` is used to calculate the GPU buffer size.
 pub struct UninitBufferVec<T>
 where
-    T: GpuArrayBufferable,
+    T: NoUninit,
 {
     buffer: Option<Buffer>,
     len: usize,
@@ -702,7 +699,7 @@ where
 
 impl<T> UninitBufferVec<T>
 where
-    T: GpuArrayBufferable,
+    T: NoUninit,
 {
     /// Creates a new [`UninitBufferVec`] with the given [`BufferUsages`].
     pub const fn new(buffer_usage: BufferUsages) -> Self {

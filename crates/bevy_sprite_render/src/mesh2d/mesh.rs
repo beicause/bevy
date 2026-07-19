@@ -12,6 +12,7 @@ use bevy_render::{
     RenderStartup,
 };
 use bevy_shader::{load_shader_library, Shader, ShaderDefVal, ShaderSettings};
+use bytemuck::NoUninit;
 
 use crate::{
     prepare_pending_mesh_material2d_queues, tonemapping_pipeline_key, PendingMeshMaterial2dQueues,
@@ -226,7 +227,8 @@ pub struct Mesh2dTransforms {
     pub flags: u32,
 }
 
-#[derive(ShaderType, Clone, Copy)]
+#[derive(ShaderType, Clone, Copy, NoUninit)]
+#[repr(C)]
 pub struct Mesh2dUniform {
     // Affine 4x3 matrix transposed to 3x4
     pub world_from_local: [Vec4; 3],
@@ -240,6 +242,9 @@ pub struct Mesh2dUniform {
     pub material_bind_group_slot: u32,
     pub tag: u32,
     pub metadata_index: u32,
+    pub pad1: u32,
+    pub pad2: u32,
+    pub pad3: u32,
 }
 
 impl Mesh2dUniform {
@@ -261,6 +266,9 @@ impl Mesh2dUniform {
             flags: mesh_transforms.flags,
             tag,
             metadata_index: metadata_index.unwrap_or(0),
+            pad1: 0,
+            pad2: 0,
+            pad3: 0,
         }
     }
 }

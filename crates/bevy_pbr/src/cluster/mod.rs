@@ -107,7 +107,7 @@ pub(crate) fn make_global_cluster_settings(world: &World) -> GlobalClusterSettin
 /// (point or spot).
 ///
 /// This is *not* used for other clustered objects, such as light probes.
-#[derive(Copy, Clone, ShaderType, Default, Pod, Zeroable, Debug)]
+#[derive(Copy, Clone, Default, Pod, Zeroable, Debug)]
 #[repr(C)]
 pub struct GpuClusteredLight {
     // For point lights: the lower-right 2x2 values of the projection matrix [2][2] [2][3] [3][2] [3][3]
@@ -330,9 +330,11 @@ impl GpuClusteredLights {
 
     pub fn min_size(buffer_binding_type: BufferBindingType) -> NonZero<u64> {
         match buffer_binding_type {
-            BufferBindingType::Storage { .. } => GpuClusteredLight::min_size(),
+            BufferBindingType::Storage { .. } => {
+                NonZero::try_from(size_of::<GpuClusteredLight>() as u64).unwrap()
+            }
             BufferBindingType::Uniform => NonZero::try_from(
-                u64::from(GpuClusteredLight::min_size())
+                size_of::<GpuClusteredLight>() as u64
                     * MAX_UNIFORM_BUFFER_CLUSTERABLE_OBJECTS as u64,
             )
             .unwrap(),

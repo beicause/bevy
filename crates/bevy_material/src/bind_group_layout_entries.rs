@@ -364,6 +364,7 @@ impl core::ops::Deref for DynamicBindGroupLayoutEntries {
 }
 
 pub mod binding_types {
+    use bytemuck::NoUninit;
     use core::num::NonZero;
     use encase::ShaderType;
     use wgpu_types::{
@@ -372,6 +373,14 @@ pub mod binding_types {
     use wgpu_types::{StorageTextureAccess, TextureFormat};
 
     use super::*;
+
+    pub fn storage_buffer_raw<T: NoUninit>(
+        has_dynamic_offset: bool,
+    ) -> BindGroupLayoutEntryBuilder {
+        const { assert!(size_of::<T>() != 0) }
+        let size = (size_of::<T>() as u64).try_into().unwrap();
+        storage_buffer_sized(has_dynamic_offset, Some(size))
+    }
 
     pub fn storage_buffer<T: ShaderType>(has_dynamic_offset: bool) -> BindGroupLayoutEntryBuilder {
         storage_buffer_sized(has_dynamic_offset, Some(T::min_size()))
@@ -387,6 +396,14 @@ pub mod binding_types {
             min_binding_size,
         }
         .into_bind_group_layout_entry_builder()
+    }
+
+    pub fn storage_buffer_read_only_raw<T: NoUninit>(
+        has_dynamic_offset: bool,
+    ) -> BindGroupLayoutEntryBuilder {
+        const { assert!(size_of::<T>() != 0) }
+        let size = (size_of::<T>() as u64).try_into().unwrap();
+        storage_buffer_read_only_sized(has_dynamic_offset, Some(size))
     }
 
     pub fn storage_buffer_read_only<T: ShaderType>(
@@ -405,6 +422,14 @@ pub mod binding_types {
             min_binding_size,
         }
         .into_bind_group_layout_entry_builder()
+    }
+
+    pub fn uniform_buffer_raw<T: NoUninit>(
+        has_dynamic_offset: bool,
+    ) -> BindGroupLayoutEntryBuilder {
+        const { assert!(size_of::<T>() != 0) }
+        let size = (size_of::<T>() as u64).try_into().unwrap();
+        uniform_buffer_sized(has_dynamic_offset, Some(size))
     }
 
     pub fn uniform_buffer<T: ShaderType>(has_dynamic_offset: bool) -> BindGroupLayoutEntryBuilder {

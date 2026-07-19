@@ -108,7 +108,7 @@ use bevy_render::view::{
 use bevy_render::RenderSystems::PrepareAssets;
 use bevy_tasks::ComputeTaskPool;
 
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{NoUninit, Pod, Zeroable};
 use nonmax::{NonMaxU16, NonMaxU32};
 
 /// Provides support for rendering 3D meshes.
@@ -513,7 +513,8 @@ pub struct MeshTransforms {
     pub flags: u32,
 }
 
-#[derive(ShaderType, Clone)]
+#[derive(ShaderType, Clone, Copy, NoUninit)]
+#[repr(C)]
 pub struct MeshUniform {
     // Affine 4x3 matrices transposed to 3x4
     pub world_from_local: [Vec4; 3],
@@ -557,13 +558,15 @@ pub struct MeshUniform {
     pub morph_descriptor_index: u32,
     /// The index of the mesh metadata buffer.
     pub metadata_index: u32,
+    pub pad1: u32,
+    pub pad2: u32,
 }
 
 /// Information that has to be transferred from CPU to GPU in order to produce
 /// the full [`MeshUniform`].
 ///
 /// This is essentially a subset of the fields in [`MeshUniform`] above.
-#[derive(ShaderType, Pod, Zeroable, Clone, Copy, Default, Debug)]
+#[derive(Pod, Zeroable, Clone, Copy, Default, Debug)]
 #[repr(C)]
 pub struct MeshInputUniform {
     /// Affine 4x3 matrix transposed to 3x4.
@@ -715,6 +718,8 @@ impl MeshUniform {
                 None => u32::MAX,
             },
             metadata_index: metadata_index.unwrap_or(0),
+            pad1: 0,
+            pad2: 0,
         }
     }
 }

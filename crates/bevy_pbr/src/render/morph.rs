@@ -8,7 +8,6 @@ use bevy_platform::collections::hash_map::Entry;
 use bevy_render::mesh::allocator::MeshAllocator;
 use bevy_render::mesh::RenderMesh;
 use bevy_render::render_asset::RenderAssets;
-use bevy_render::render_resource::ShaderType;
 use bevy_render::sync_world::{MainEntity, MainEntityHashMap};
 use bevy_render::{
     batching::NoAutomaticBatching,
@@ -171,7 +170,7 @@ impl MorphIndices {
 
 /// Information that the GPU needs about a single mesh instance that uses morph
 /// targets.
-#[derive(Clone, Copy, Default, ShaderType, Pod, Zeroable)]
+#[derive(Clone, Copy, Default, Pod, Zeroable)]
 #[repr(C)]
 pub struct GpuMorphDescriptor {
     /// The index of the first morph target weight in the `morph_weights` array.

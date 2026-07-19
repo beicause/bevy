@@ -98,7 +98,7 @@ use bevy_render::{
 };
 use bevy_shader::{load_shader_library, Shader, ShaderDefVal};
 use bevy_utils::default;
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{NoUninit, Pod, Zeroable};
 use tracing::{error, trace, warn};
 
 use crate::{
@@ -211,7 +211,7 @@ pub struct ViewClusteringBindGroups {
 ///
 /// A Z-slice is an axis-aligned bounding box representing the potential
 /// bounding box of a clusterable object in a single Z slice of the froxel grid.
-#[derive(Clone, Copy, Default, PartialEq, Eq, Hash, ShaderType, Pod, Zeroable)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash, NoUninit)]
 #[repr(C)]
 pub struct ClusterableObjectZSlice {
     /// The index of the object to be clustered.
@@ -506,7 +506,7 @@ impl FromWorld for ClusteringRasterPipeline {
         let mut bind_group_layout_entries_count_pass = vec![
             // @group(0) @binding(0) var<storage> z_slices:
             // array<ClusterableObjectZSlice>;
-            binding_types::storage_buffer_read_only::<ClusterableObjectZSlice>(false)
+            binding_types::storage_buffer_read_only_raw::<ClusterableObjectZSlice>(false)
                 .build(0, ShaderStages::VERTEX_FRAGMENT),
             // @group(0) @binding(1) var<storage, read_write> index_lists:
             // ClusterableObjectIndexLists;
@@ -514,14 +514,14 @@ impl FromWorld for ClusteringRasterPipeline {
                 .build(1, ShaderStages::FRAGMENT),
             // @group(0) @binding(2) var<storage> clustered_lights:
             // ClusteredLights;
-            binding_types::storage_buffer_read_only::<GpuClusteredLight>(false)
+            binding_types::storage_buffer_read_only_raw::<GpuClusteredLight>(false)
                 .build(2, ShaderStages::VERTEX_FRAGMENT),
             // @group(0) @binding(3) var<uniform> light_probes: LightProbes;
             binding_types::uniform_buffer::<LightProbesUniform>(true)
                 .build(3, ShaderStages::VERTEX_FRAGMENT),
             // @group(0) @binding(4) var<storage> clustered_decals:
             // ClusteredDecals;
-            binding_types::storage_buffer_read_only::<RenderClusteredDecal>(false)
+            binding_types::storage_buffer_read_only_raw::<RenderClusteredDecal>(false)
                 .build(4, ShaderStages::VERTEX_FRAGMENT),
             // @group(0) @binding(5) var<uniform> lights: Lights;
             binding_types::uniform_buffer::<GpuLights>(true)
@@ -642,19 +642,19 @@ impl FromWorld for ClusteringZSlicingPipeline {
                 (
                     // @group(0) @binding(0) var<storage, read_write>
                     // cluster_metadata: ClusterMetadata;
-                    binding_types::storage_buffer::<ClusterMetadata>(false),
+                    binding_types::storage_buffer_raw::<ClusterMetadata>(false),
                     // @group(0) @binding(1) var<storage, read_write> z_slices:
                     // array<ClusterableObjectZSlice>;
-                    binding_types::storage_buffer::<ClusterableObjectZSlice>(false),
+                    binding_types::storage_buffer_raw::<ClusterableObjectZSlice>(false),
                     // @group(0) @binding(2) var<storage> clustered_lights:
                     // ClusteredLights;
-                    binding_types::storage_buffer_read_only::<GpuClusteredLight>(false),
+                    binding_types::storage_buffer_read_only_raw::<GpuClusteredLight>(false),
                     // @group(0) @binding(3) var<uniform> light_probes:
                     // LightProbes;
                     binding_types::uniform_buffer::<LightProbesUniform>(true),
                     // @group(0) @binding(4) var<storage> clustered_decals:
                     // ClusteredDecals;
-                    binding_types::storage_buffer_read_only::<RenderClusteredDecal>(false),
+                    binding_types::storage_buffer_read_only_raw::<RenderClusteredDecal>(false),
                     // @group(0) @binding(5) var<uniform> lights: Lights;
                     binding_types::uniform_buffer::<GpuLights>(true),
                     // @group(0) @binding(6) var<uniform> view: View;
