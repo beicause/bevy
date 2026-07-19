@@ -1,0 +1,24 @@
+[package]
+name = "bevy_utils_compile_fail"
+edition = "2024"
+description = "Compile fail tests for Bevy Engine's utils"
+homepage = "https://bevy.org"
+repository = "https://github.com/bevyengine/bevy"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+bevy_utils = { path = "../", features = ["shader_layout"] }
+glam = {
+  version = "0.33",
+  default-features = false,
+  features = ["nostd-libm", "i16", "i32", "u16", "u32"],
+}
+half = { version = "2", default-features = false }
+
+[dev-dependencies]
+compile_fail_utils = { path = "../../../tools/compile_fail_utils" }
+
+[[test]]
+name = "ui"
+harness = false

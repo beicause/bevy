@@ -24,6 +24,10 @@ pub mod cfg {
             /// Indicates the `BufferedChannel` type is available.
             buffered_channel
         }
+        #[cfg(feature = "shader_layout")] => {
+            /// Indicates the `shader_layout` macro is available.
+            shader_layout
+        }
     }
 }
 
@@ -46,6 +50,11 @@ cfg::parallel! {
 cfg::buffered_channel! {
     mod buffered_channel;
     pub use buffered_channel::*;
+}
+
+cfg::shader_layout! {
+    mod shader_layout;
+    pub use shader_layout::*;
 }
 
 /// The utilities prelude.

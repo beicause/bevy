@@ -47,6 +47,15 @@ impl Prepare for CompileFailCommand {
             ),
         );
 
+        // Utils Compile Fail Tests
+        // Run tests (they do not get executed with the workspace tests)
+        commands.push(
+            PreparedCommand::new::<Self>(
+                cmd!(sh, "cargo test -p bevy_utils_compile_fail {no_fail_fast...} {jobs_ref...} -- {test_threads_ref...}"),
+                "Compiler errors of the Utils compile fail tests seem to be different than expected! Check locally and compare rust versions.",
+            ),
+        );
+
         commands
     }
 }
