@@ -1,0 +1,118 @@
+//! Tests for [`shader_layout`] macro.
+
+use bevy_utils::shader_layout;
+use core::num::{NonZero, Wrapping};
+use glam::{
+    I16Vec2, I16Vec3, I16Vec4, IVec2, IVec3, IVec4, Mat2, Mat3A, Mat4, Quat, U16Vec2, U16Vec3,
+    U16Vec4, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4,
+};
+use half::f16;
+
+#[test]
+fn compile_pass() {
+    shader_layout! {
+        pub struct AllTypes {
+            a1: f16,
+            a2: i16,
+            a3: u16,
+            a4: NonZero<i16>,
+            a5: NonZero<u16>,
+            a6: Wrapping<i16>,
+            a7: Wrapping<u16>,
+            a8: f32,
+            a9: i32,
+            a10: u32,
+            a11: NonZero<i32>,
+            a12: NonZero<u32>,
+            a13: Wrapping<f32>,
+            a14: Wrapping<i32>,
+            a15: Wrapping<u32>,
+
+            a16: I16Vec2,
+            p1: [u16; 2],
+            a17: I16Vec3,
+            p2: [u16; 1],
+            a18: I16Vec4,
+            a19: IVec2,
+            a20: IVec3,
+            p3: [u32; 1],
+            a21: IVec4,
+            a22: Mat2,
+            a23: Mat3A,
+            a24: Mat4,
+            a25: Quat,
+            a26: U16Vec2,
+            p4: [u16; 2],
+            a27: U16Vec3,
+            p5: [u16; 1],
+            a28: U16Vec4,
+            a29: UVec2,
+            a30: UVec3,
+            p6: [u32; 1],
+            a31: UVec4,
+            a32: Vec2,
+            p7: [u32; 2],
+            a33: Vec3,
+            a34: Vec4,
+        }
+    }
+
+    shader_layout! {
+        pub struct AllTypeArrays {
+            a1: [f16; 2],
+            a2: [i16; 2],
+            a3: [u16; 2],
+            a4: [NonZero<i16>; 2],
+            a5: [NonZero<u16>; 2],
+            a6: [Wrapping<i16>; 2],
+            a7: [Wrapping<u16>; 2],
+            a8: [f32; 2],
+            a9: [i32; 2],
+            a10: [u32; 2],
+            a11: [NonZero<i32>; 2],
+            a12: [NonZero<u32>; 2],
+            a13: [Wrapping<f32>; 2],
+            a14: [Wrapping<i32>; 2],
+            a15: [Wrapping<u32>; 2],
+
+            a16: [I16Vec2; 2],
+            p1: u32,
+            // a17: [I16Vec3; 2],
+            a18: [I16Vec4; 2],
+            a19: [IVec2; 2],
+            // a20: [IVec3; 2],
+            p2: [u32; 2],
+            a21: [IVec4; 2],
+            a22: [Mat2; 2],
+            a23: [Mat3A; 2],
+            a24: [Mat4; 2],
+            a25: [Quat; 2],
+            a26: [U16Vec2; 2],
+            // a27: [U16Vec3; 2],
+            a28: [U16Vec4; 2],
+            a29: [UVec2; 2],
+            p3: [u32; 2],
+            // a30: [UVec3; 2],
+            a31: [UVec4; 2],
+            a32: [Vec2; 2],
+            // a33: [Vec3; 2],
+            a34: [Vec4; 2],
+        }
+    }
+
+    // Succeeds because `f32` is aligned in `repr(C)`.
+    shader_layout! {
+        pub struct AlignF16 {
+            a4: f16,
+            a1: f32,
+        }
+    }
+
+    // Succeeds because it is explicitly aligned in `repr(align())`.
+    shader_layout! {
+        #[repr(align(16))]
+        pub struct AlignExplicit {
+            a1: Vec3,
+        }
+    }
+}
