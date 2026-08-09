@@ -174,7 +174,7 @@ impl ShaderBuffer {
     /// Panics:
     /// * If `T` has a greater alignment requirement and the `AlignedVec` isn't aligned.
     /// * If the size of `AlignedVec` is not a multiple of `size_of::<T>()`
-    pub fn as_slice<T: bytemuck::AnyBitPattern>(&self) -> Option<&[T]> {
+    pub fn cast_slice<T: bytemuck::AnyBitPattern>(&self) -> Option<&[T]> {
         match &self.data {
             ShaderBufferData::Uninitialized(_) => None,
             ShaderBufferData::Initialized(aligned_vec) => Some(aligned_vec.cast_slice()),
@@ -186,7 +186,7 @@ impl ShaderBuffer {
     /// Panics:
     /// * If `T` has a greater alignment requirement than the `AlignedVec`.
     /// * If the size of `AlignedVec` is not a multiple of `size_of::<T>()`
-    pub fn as_mut_slice<T: bytemuck::NoUninit + bytemuck::AnyBitPattern>(
+    pub fn cast_slice_mut<T: bytemuck::NoUninit + bytemuck::AnyBitPattern>(
         &mut self,
     ) -> Option<&mut [T]> {
         match &mut self.data {

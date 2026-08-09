@@ -99,7 +99,9 @@ where
     /// into.
     pub fn new(shader_buffer_assets: &mut Assets<ShaderBuffer>) -> Self {
         let buffer = shader_buffer_assets.add(ShaderBuffer {
-            data: ShaderBufferData::Initialized(AlignedVec::from(vec![0; size_of::<C::Out>()])),
+            data: ShaderBufferData::Initialized(AlignedVec::from(bytemuck::zeroed_vec::<C::Out>(
+                1,
+            ))),
             label: C::label(),
             buffer_usage: C::buffer_usage(),
             asset_usage: RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
@@ -216,7 +218,7 @@ where
             let next_buffer_len = round_buffer_size_up(needed_buffer_len);
             data_buffer.resize(next_buffer_len * size_of::<C::Out>(), 0);
         }
-        bytemuck::cast_slice_mut(data_buffer.as_mut_slice())[tag as usize] = data;
+        data_buffer.cast_slice_mut()[tag as usize] = data;
 
         let prev_tag = self.entity_to_tag.insert(entity, tag);
         self.tag_to_entity.push(entity);
@@ -225,23 +227,23 @@ where
     }
 
     fn get<'a>(&'_ self, buffer: &'a ShaderBuffer, tag: u32) -> &'a C::Out {
-        let ShaderBufferData::Initialized(ref data_buffer) = buffer.data else {
+        let Some(data_buffer) = buffer.cast_slice() else {
             panic!(
                 "Shader buffers created for use in a `GpuComponentArrayBuffer` must have been \
                 created with `ShaderBufferData::Initialized`"
             );
         };
-        &bytemuck::cast_slice(data_buffer.as_slice())[tag as usize]
+        &data_buffer[tag as usize]
     }
 
     fn set(&mut self, buffer: &mut ShaderBuffer, tag: u32, data: C::Out) {
-        let ShaderBufferData::Initialized(ref mut data_buffer) = buffer.data else {
+        let Some(data_buffer) = buffer.cast_slice_mut() else {
             panic!(
                 "Shader buffers created for use in a `GpuComponentArrayBuffer` must have been \
                 created with `ShaderBufferData::Initialized`"
             );
         };
-        bytemuck::cast_slice_mut(data_buffer.as_mut_slice())[tag as usize] = data;
+        data_buffer[tag as usize] = data;
     }
 
     fn remove(
