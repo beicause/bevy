@@ -12,7 +12,7 @@ use bevy_ecs::{
     prelude::Entity,
     query::{QueryFilter, QueryItem, ReadOnlyQueryData},
     resource::Resource,
-    system::{Commands, If, Local, Query, ResMut},
+    system::{Commands, Local, Query, ResMut},
 };
 use bevy_mesh::MeshTag;
 use bevy_platform::collections::AlignedVec;
@@ -78,7 +78,10 @@ where
     C: GpuComponentArrayBuffer,
 {
     fn build(&self, app: &mut App) {
-        app.add_systems(PostUpdate, update_components::<C>);
+        let mut shader_buffer_assets = app.world_mut().resource_mut();
+        let component_array = GpuComponentArray::<C>::new(&mut shader_buffer_assets);
+        app.insert_resource(component_array)
+            .add_systems(PostUpdate, update_components::<C>);
     }
 }
 
@@ -123,7 +126,7 @@ where
 fn update_components<C>(
     mut commands: Commands,
     query: Query<(Entity, Option<&MeshTag>, C::QueryData), C::QueryFilter>,
-    mut component_array: If<ResMut<GpuComponentArray<C>>>,
+    mut component_array: ResMut<GpuComponentArray<C>>,
     mut shader_buffers: ResMut<Assets<ShaderBuffer>>,
     mut removed_components: RemovedComponents<C>,
     mut processed_entities: Local<EntityHashSet>,

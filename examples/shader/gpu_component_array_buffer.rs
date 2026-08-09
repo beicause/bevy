@@ -77,14 +77,14 @@ struct CustomMaterialData {
 /// The GPU version of the per-mesh-instance data.
 ///
 /// This is copied byte-by-byte to the GPU, not processed through
-/// [`ShaderType`]. Consequently, we must insert all padding ourselves. We pad
-/// the value out to 16 bytes, which is a good conservative practice.
+/// [`ShaderType`]. Consequently, we must insert all padding ourselves.
 #[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct GpuCustomMaterialData {
     /// The tint color to modulate the texture by.
     color: Vec3,
-    /// Padding to pad this data out to a multiple of 16 bytes.
+    /// Padding to pad this data out to a multiple of 16 bytes,
+    /// because in shader this struct is 16 bytes due to vec3 alignment, not 12 bytes.
     pad: u32,
 }
 
@@ -115,14 +115,11 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut bindless_materials: ResMut<Assets<CustomMaterial>>,
-    mut shader_buffers: ResMut<Assets<ShaderBuffer>>,
+    component_array: Res<GpuComponentArray<CustomMaterialData>>,
     asset_server: Res<AssetServer>,
 ) {
-    // Create our `GpuComponentArray` that contains the data that we're going to
-    // make available to the GPU.
-    let component_array = GpuComponentArray::<CustomMaterialData>::new(&mut shader_buffers);
+    // Get our `GpuComponentArray` that contains the data
     let buffer = component_array.buffer.clone();
-    commands.insert_resource(component_array);
 
     // Create a cube mesh.
     let mesh = meshes.add(Cuboid::default());
