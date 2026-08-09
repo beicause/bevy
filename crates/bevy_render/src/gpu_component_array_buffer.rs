@@ -249,11 +249,14 @@ where
         buffer: &mut ShaderBuffer,
         entity_to_remove: Entity,
     ) -> Option<(Entity, u32)> {
+        let tag_to_remove = self.entity_to_tag.remove(&entity_to_remove)?;
+
+        // Safe to compute now: `tag_to_entity` is non-empty because the entity
+        // was present in the array, so `len() - 1` can't underflow.
         let displaced_tag = self.tag_to_entity.len() as u32 - 1;
         let displaced_data = *self.get(buffer, displaced_tag);
         let displaced_entity = *self.tag_to_entity.last().unwrap();
 
-        let tag_to_remove = self.entity_to_tag.remove(&entity_to_remove)?;
         let removed_entity = self.tag_to_entity.swap_remove(tag_to_remove as usize);
         debug_assert_eq!(entity_to_remove, removed_entity);
 
@@ -281,6 +284,7 @@ fn round_buffer_size_up(original_size: usize) -> usize {
     let exponent = (original_size as f64).ln() / BUFFER_ALLOCATION_GROWTH_FACTOR.ln();
     BUFFER_ALLOCATION_GROWTH_FACTOR.powi(exponent.ceil() as i32) as usize
 }
+
 #[cfg(test)]
 mod tests {
     use std::marker::PhantomData;
@@ -529,5 +533,39 @@ mod tests {
             (test_data.entity_c, test_data.entity_data_c),
             (test_data.entity_b, test_data.entity_data_b),
         ]);
+    }
+
+    // Check that removing an entity that was never added to a GPU component
+    // array returns `None` rather than panicking.
+    //
+    // This can happen in practice: `extract_component` may return `None` for
+    // entities whose data is missing or not yet ready, and `update_components`
+    // will then call `remove` on them. It can also occur via
+    // `RemovedComponents` when a component is removed before ever being
+    // extracted. The array may be empty at that point.
+    #[test]
+    fn remove_missing_element_from_empty_gpu_component_array() {
+        let mut test_data = TestData::new();
+        let maybe_displaced_element = test_data
+            .gpu_component_array
+            .remove(&mut test_data.buffer, test_data.entity_a);
+        assert_eq!(maybe_displaced_element, None);
+        test_data.check(&[]);
+    }
+
+    // Same as above, but the array is non-empty and the entity was never added.
+    #[test]
+    fn remove_missing_element_from_nonempty_gpu_component_array() {
+        let mut test_data = TestData::new();
+        test_data.gpu_component_array.push(
+            &mut test_data.buffer,
+            test_data.entity_a,
+            test_data.entity_data_a,
+        );
+        let maybe_displaced_element = test_data
+            .gpu_component_array
+            .remove(&mut test_data.buffer, test_data.entity_b);
+        assert_eq!(maybe_displaced_element, None);
+        test_data.check(&[(test_data.entity_a, test_data.entity_data_a)]);
     }
 }

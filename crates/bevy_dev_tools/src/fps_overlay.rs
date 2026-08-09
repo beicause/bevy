@@ -221,7 +221,6 @@ fn setup(
             #[cfg(not(all(target_arch = "wasm32", not(feature = "webgpu"))))]
             {
                 // Todo: Needs a better design that works with responsive sizing.
-
                 let font_size = 20.;
                 p.spawn((
                     Node {
@@ -240,7 +239,7 @@ fn setup(
                             // Initialize with dummy data because the default (buffer is zero-sized) will
                             // cause a panic in the shader if the frame time graph is constructed
                             // with `enabled: false`.
-                             vec![0, 0, 0, 0],
+                             vec![0.0f32],
                              Default::default()
                         )),
                         config: FrameTimeGraphConfigUniform::new(
