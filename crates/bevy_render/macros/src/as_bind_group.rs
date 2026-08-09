@@ -322,7 +322,6 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                             #render_path::render_resource::ShaderType
                         >::min_size().get() as usize
                     ),
-                    is_shader_buffer: false,
                 }
             });
 
@@ -532,7 +531,6 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                                 bindless_index:
                                     #render_path::render_resource::BindlessIndex(#binding_index),
                                 size: #FQOption::None,
-                                is_shader_buffer: #buffer,
                             }
                         });
 
